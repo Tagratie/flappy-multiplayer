@@ -174,6 +174,23 @@
             margin-top: 15px;
         }
 
+        .countdown {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 120px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 4px 4px 8px rgba(0,0,0,0.5);
+            animation: pulse 0.5s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.2); }
+        }
+
         @media (max-width: 1024px) {
             .game-container {
                 flex-direction: column;
@@ -223,28 +240,35 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        const GRAVITY = 0.6;
-        const JUMP_STRENGTH = -10;
+        const GRAVITY = 0.5;
+        const JUMP_STRENGTH = -9;
         const PIPE_WIDTH = 60;
         const PIPE_GAP = 180;
-        const PIPE_SPEED = 3;
+        const PIPE_SPEED = 2;
         const BIRD_SIZE = 30;
         const GAME_WIDTH = 800;
         const GAME_HEIGHT = 600;
+        const GROUND_HEIGHT = 100;
 
         let gameState = 'menu';
         let bird = { y: 300, velocity: 0 };
         let pipes = [];
         let score = 0;
+        let highScore = 0;
         let playerName = '';
-        let sessionId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        let playerId = localStorage.getItem('playerId') || `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        localStorage.setItem('playerId', playerId);
+        
+        let sessionId = `session_${Date.now()}`;
         let ghostPlayers = [];
         let leaderboard = [];
         let aiOpponents = [];
         let aiCount = 2;
         let frameCount = 0;
+        let countdown = 0;
+        let gameStarted = false;
 
-        // Storage simulation for local testing (replace with actual backend)
+        // Storage simulation for local testing
         const storage = {
             data: {},
             async get(key) {
@@ -300,13 +324,14 @@
         }
 
         async function updateGhostPosition() {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || !gameStarted) return;
 
             try {
                 await storage.set(
                     `ghost:${sessionId}`,
                     JSON.stringify({
                         sessionId,
+                        playerId,
                         name: playerName || 'Anonymous',
                         y: bird.y,
                         score,
@@ -320,16 +345,27 @@
         }
 
         async function saveScore(finalScore) {
-            try {
-                const entry = {
-                    name: playerName || 'Anonymous',
-                    score: finalScore,
-                    timestamp: Date.now()
-                };
+            if (finalScore === 0) return;
 
+            try {
                 const current = await storage.get('leaderboard');
-                const lb = current ? JSON.parse(current.value) : [];
-                lb.push(entry);
+                let lb = current ? JSON.parse(current.value) : [];
+                
+                // Remove old entries from this player (by playerId, not name)
+                lb = lb.filter(entry => entry.playerId !== playerId);
+                
+                // Add new score only if it's better than previous high score
+                if (finalScore > highScore) {
+                    highScore = finalScore;
+                    const entry = {
+                        playerId,
+                        name: playerName || 'Anonymous',
+                        score: finalScore,
+                        timestamp: Date.now()
+                    };
+                    lb.push(entry);
+                }
+                
                 lb.sort((a, b) => b.score - a.score);
                 const top10 = lb.slice(0, 10);
 
@@ -393,7 +429,8 @@
                     }
                 }
 
-                const hitGround = newY > GAME_HEIGHT - BIRD_SIZE || newY < 0;
+                const hitGround = newY > GAME_HEIGHT - GROUND_HEIGHT - BIRD_SIZE;
+                const hitCeiling = newY < 0;
                 const hitPipe = pipes.some(pipe => {
                     const aiX = 100;
                     return aiX + BIRD_SIZE > pipe.x &&
@@ -401,14 +438,16 @@
                         (newY < pipe.y || newY + BIRD_SIZE > pipe.y + PIPE_GAP);
                 });
 
-                if (hitGround || hitPipe) {
+                if (hitGround || hitCeiling || hitPipe) {
                     return { ...ai, alive: false };
                 }
 
                 let newScore = ai.score;
                 pipes.forEach(pipe => {
-                    if (!pipe.scored && pipe.x + PIPE_WIDTH < 100) {
+                    if (!pipe.aiScored && !pipe.aiScored) pipe.aiScored = {};
+                    if (!pipe.aiScored[ai.id] && pipe.x + PIPE_WIDTH < 100) {
                         newScore++;
+                        pipe.aiScored[ai.id] = true;
                     }
                 });
 
@@ -417,13 +456,20 @@
         }
 
         function showMenu() {
+            const savedName = localStorage.getItem('playerName');
+            if (savedName) {
+                playerName = savedName;
+                startCountdown();
+                return;
+            }
+
             const modal = document.createElement('div');
             modal.className = 'modal';
             modal.id = 'menuModal';
             modal.innerHTML = `
                 <div class="modal-content">
                     <h2>Ready to Fly?</h2>
-                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" />
+                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" value="${playerName}" />
                     <div class="slider-container">
                         <label>AI Opponents: <span id="aiCountDisplay">${aiCount}</span></label>
                         <input type="range" id="aiCountSlider" min="0" max="5" value="${aiCount}" />
@@ -446,48 +492,74 @@
         }
 
         function startGame() {
-            playerName = document.getElementById('playerNameInput').value.trim();
-            if (!playerName) {
-                alert('Please enter your name!');
-                return;
+            const input = document.getElementById('playerNameInput');
+            if (input) {
+                playerName = input.value.trim();
+                if (!playerName) {
+                    alert('Please enter your name!');
+                    return;
+                }
+                localStorage.setItem('playerName', playerName);
             }
 
             const modal = document.getElementById('menuModal');
             if (modal) modal.remove();
 
+            startCountdown();
+        }
+
+        function startCountdown() {
             bird = { y: 300, velocity: 0 };
-            pipes = [{ x: GAME_WIDTH, y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100, scored: false }];
+            pipes = [];
             score = 0;
-            gameState = 'playing';
+            gameState = 'countdown';
+            gameStarted = false;
+            countdown = 3;
             initializeAI();
+            sessionId = `session_${Date.now()}`;
+
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown === 0) {
+                    clearInterval(countdownInterval);
+                    gameState = 'playing';
+                    gameStarted = true;
+                    pipes.push({ 
+                        x: GAME_WIDTH, 
+                        y: Math.random() * (GAME_HEIGHT - GROUND_HEIGHT - PIPE_GAP - 100) + 50, 
+                        scored: false,
+                        aiScored: {}
+                    });
+                }
+            }, 1000);
         }
 
         function showGameOver() {
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.id = 'gameOverModal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <h2 class="game-over">Game Over!</h2>
-                    <p style="font-size: 1.5em; margin: 20px 0;">Score: ${score}</p>
-                    <button onclick="resetGame()">Play Again</button>
-                    <div class="instructions-text">Press SPACE to restart</div>
-                </div>
-            `;
-            canvas.parentElement.appendChild(modal);
+            setTimeout(() => {
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.id = 'gameOverModal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <h2 class="game-over">Game Over!</h2>
+                        <p style="font-size: 1.5em; margin: 20px 0;">Score: ${score}</p>
+                        ${highScore > 0 ? `<p style="font-size: 1.2em; color: #f59e0b; margin-bottom: 20px;">Best: ${highScore}</p>` : ''}
+                        <button onclick="respawn()">Try Again</button>
+                        <div class="instructions-text">Press SPACE to respawn</div>
+                    </div>
+                `;
+                canvas.parentElement.appendChild(modal);
+            }, 500);
         }
 
-        function resetGame() {
+        function respawn() {
             const modal = document.getElementById('gameOverModal');
             if (modal) modal.remove();
-            gameState = 'menu';
-            ghostPlayers = [];
-            aiOpponents = [];
-            showMenu();
+            startCountdown();
         }
 
         function jump() {
-            if (gameState === 'playing') {
+            if (gameState === 'playing' && gameStarted) {
                 bird.velocity = JUMP_STRENGTH;
             }
         }
@@ -495,123 +567,187 @@
         function gameLoop() {
             ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-            // Draw background
-            ctx.fillStyle = '#87CEEB';
-            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            // Draw sky
+            ctx.fillStyle = '#4ec0ca';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT - GROUND_HEIGHT);
 
-            if (gameState === 'playing') {
-                frameCount++;
+            // Draw ground
+            ctx.fillStyle = '#ded895';
+            ctx.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, GROUND_HEIGHT);
+            ctx.fillStyle = '#84c96a';
+            ctx.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, 20);
 
-                // Update bird
-                bird.velocity += GRAVITY;
-                bird.y += bird.velocity;
+            if (gameState === 'playing' || gameState === 'countdown') {
+                if (gameStarted) {
+                    frameCount++;
 
-                // Check collision with ground/ceiling
-                if (bird.y > GAME_HEIGHT - BIRD_SIZE || bird.y < 0) {
-                    gameState = 'gameOver';
-                    saveScore(score);
-                    showGameOver();
-                }
+                    // Update bird physics
+                    bird.velocity += GRAVITY;
+                    bird.velocity = Math.min(bird.velocity, 10); // Terminal velocity
+                    bird.y += bird.velocity;
 
-                // Update pipes
-                pipes = pipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
-                pipes = pipes.filter(pipe => pipe.x > -PIPE_WIDTH);
-
-                if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 300) {
-                    pipes.push({
-                        x: GAME_WIDTH,
-                        y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100,
-                        scored: false
-                    });
-                }
-
-                // Check pipe collision
-                const birdX = 100;
-                pipes.forEach(pipe => {
-                    if (birdX + BIRD_SIZE > pipe.x &&
-                        birdX < pipe.x + PIPE_WIDTH &&
-                        (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
+                    // Check collision with ground/ceiling
+                    if (bird.y > GAME_HEIGHT - GROUND_HEIGHT - BIRD_SIZE || bird.y < 0) {
                         gameState = 'gameOver';
                         saveScore(score);
                         showGameOver();
                     }
 
-                    if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
-                        pipe.scored = true;
-                        score++;
+                    // Update pipes
+                    pipes = pipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+                    pipes = pipes.filter(pipe => pipe.x > -PIPE_WIDTH);
+
+                    if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 250) {
+                        pipes.push({
+                            x: GAME_WIDTH,
+                            y: Math.random() * (GAME_HEIGHT - GROUND_HEIGHT - PIPE_GAP - 100) + 50,
+                            scored: false,
+                            aiScored: {}
+                        });
                     }
-                });
 
-                updateAI();
+                    // Check pipe collision
+                    const birdX = 100;
+                    pipes.forEach(pipe => {
+                        if (birdX + BIRD_SIZE > pipe.x &&
+                            birdX < pipe.x + PIPE_WIDTH &&
+                            (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
+                            gameState = 'gameOver';
+                            saveScore(score);
+                            showGameOver();
+                        }
 
-                if (frameCount % 10 === 0) {
-                    updateGhostPosition();
+                        if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
+                            pipe.scored = true;
+                            score++;
+                        }
+                    });
+
+                    updateAI();
+
+                    if (frameCount % 10 === 0) {
+                        updateGhostPosition();
+                    }
                 }
             }
 
             // Draw pipes
-            ctx.fillStyle = '#16a34a';
-            ctx.strokeStyle = '#15803d';
+            ctx.fillStyle = '#5cac48';
+            ctx.strokeStyle = '#3d7a2e';
             ctx.lineWidth = 4;
             pipes.forEach(pipe => {
+                // Top pipe
                 ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
                 ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
-                ctx.fillRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - pipe.y - PIPE_GAP);
-                ctx.strokeRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - pipe.y - PIPE_GAP);
+                // Pipe cap
+                ctx.fillRect(pipe.x - 5, pipe.y - 25, PIPE_WIDTH + 10, 25);
+                ctx.strokeRect(pipe.x - 5, pipe.y - 25, PIPE_WIDTH + 10, 25);
+
+                // Bottom pipe
+                ctx.fillRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - GROUND_HEIGHT - pipe.y - PIPE_GAP);
+                ctx.strokeRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - GROUND_HEIGHT - pipe.y - PIPE_GAP);
+                // Pipe cap
+                ctx.fillRect(pipe.x - 5, pipe.y + PIPE_GAP, PIPE_WIDTH + 10, 25);
+                ctx.strokeRect(pipe.x - 5, pipe.y + PIPE_GAP, PIPE_WIDTH + 10, 25);
             });
 
             // Draw ghost players
             ghostPlayers.forEach(ghost => {
-                ctx.globalAlpha = 0.5;
-                ctx.fillStyle = '#9ca3af';
-                ctx.beginPath();
-                ctx.arc(100 + BIRD_SIZE / 2, ghost.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
+                if (ghost.y < GAME_HEIGHT - GROUND_HEIGHT) {
+                    ctx.globalAlpha = 0.4;
+                    ctx.fillStyle = '#9ca3af';
+                    ctx.beginPath();
+                    ctx.arc(100 + BIRD_SIZE / 2, ghost.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
 
-                ctx.fillStyle = '#4b5563';
-                ctx.font = '12px Arial';
-                ctx.fillText(`${ghost.name}: ${ghost.score}`, 100, ghost.y - 10);
+                    ctx.fillStyle = '#4b5563';
+                    ctx.font = '11px Arial';
+                    ctx.fillText(`${ghost.name}: ${ghost.score}`, 100, ghost.y - 8);
+                }
             });
 
             // Draw AI opponents
             aiOpponents.filter(ai => ai.alive).forEach(ai => {
-                ctx.fillStyle = '#a855f7';
-                ctx.beginPath();
-                ctx.arc(100 + BIRD_SIZE / 2, ai.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
-                ctx.fill();
+                if (ai.y < GAME_HEIGHT - GROUND_HEIGHT) {
+                    ctx.fillStyle = '#a855f7';
+                    ctx.beginPath();
+                    ctx.arc(100 + BIRD_SIZE / 2, ai.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                    ctx.fill();
 
-                ctx.fillStyle = '#7c3aed';
-                ctx.font = 'bold 12px Arial';
-                ctx.fillText(`${ai.name}: ${ai.score}`, 100, ai.y - 10);
+                    ctx.fillStyle = '#7c3aed';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.fillText(`${ai.name}: ${ai.score}`, 100, ai.y - 8);
+                }
             });
 
             // Draw player bird
             if (gameState !== 'menu') {
-                ctx.fillStyle = '#facc15';
-                ctx.strokeStyle = '#ca8a04';
+                const rotation = Math.min(Math.max(bird.velocity * 3, -30), 90) * Math.PI / 180;
+                
+                ctx.save();
+                ctx.translate(100 + BIRD_SIZE / 2, bird.y + BIRD_SIZE / 2);
+                ctx.rotate(rotation);
+                
+                // Bird body
+                ctx.fillStyle = '#ffd900';
+                ctx.strokeStyle = '#e0b800';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(100 + BIRD_SIZE / 2, bird.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                ctx.arc(0, 0, BIRD_SIZE / 2, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
 
-                // Draw eye
+                // Wing
+                ctx.fillStyle = '#ffeb3b';
+                ctx.beginPath();
+                ctx.ellipse(-5, 2, 8, 12, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye white
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(5, -3, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eye pupil
                 ctx.fillStyle = 'black';
                 ctx.beginPath();
-                ctx.arc(100 + BIRD_SIZE / 2 + 5, bird.y + BIRD_SIZE / 2 - 3, 3, 0, Math.PI * 2);
+                ctx.arc(7, -3, 3, 0, Math.PI * 2);
                 ctx.fill();
+
+                // Beak
+                ctx.fillStyle = '#ff8c00';
+                ctx.beginPath();
+                ctx.moveTo(12, 0);
+                ctx.lineTo(20, -2);
+                ctx.lineTo(20, 2);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
             }
 
             // Draw score
-            if (gameState === 'playing') {
+            if (gameState === 'playing' || gameState === 'gameOver') {
                 ctx.fillStyle = 'white';
                 ctx.strokeStyle = 'black';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 4;
                 ctx.font = 'bold 48px Arial';
                 ctx.textAlign = 'center';
                 ctx.strokeText(score, GAME_WIDTH / 2, 60);
                 ctx.fillText(score, GAME_WIDTH / 2, 60);
+            }
+
+            // Draw countdown
+            if (gameState === 'countdown' && countdown > 0) {
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 6;
+                ctx.font = 'bold 120px Arial';
+                ctx.textAlign = 'center';
+                ctx.strokeText(countdown, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+                ctx.fillText(countdown, GAME_WIDTH / 2, GAME_HEIGHT / 2);
             }
 
             requestAnimationFrame(gameLoop);
@@ -628,7 +764,7 @@
                 } else if (gameState === 'playing') {
                     jump();
                 } else if (gameState === 'gameOver') {
-                    resetGame();
+                    respawn();
                 }
             }
         });
@@ -636,6 +772,13 @@
         // Initialize
         loadGameData();
         setInterval(loadGameData, 2000);
+        
+        // Check if player has a saved name
+        const savedName = localStorage.getItem('playerName');
+        if (savedName) {
+            playerName = savedName;
+        }
+        
         showMenu();
         gameLoop();
     </script>
