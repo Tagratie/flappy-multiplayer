@@ -4,890 +4,689 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multiplayer Flappy Bird</title>
+    <script src="https://unpkg.com/convex@1.24.2/dist/browser.js"></script>
+    <script src="https://unpkg.com/@convex-dev/auth@0.0.80/dist/browser.js"></script>
+    <script src="https://unpkg.com/react@19.0.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@19.0.0/umd/react-dom.production.min.js"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
         body {
             font-family: 'Arial', sans-serif;
-            background: linear-gradient(to bottom, #87CEEB, #87CEEB);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: white;
             min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
             padding: 20px;
         }
-
+        
         .header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
-
-        h1 {
-            color: white;
-            font-size: 3em;
-            text-shadow: 3px 3px 6px rgba(0,0,0,0.3);
+        
+        .title {
+            font-size: 3rem;
+            color: #ffd700;
             margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
         }
-
+        
+        .subtitle {
+            font-size: 1.2rem;
+            color: #ccc;
+        }
+        
         .game-container {
             display: flex;
-            gap: 20px;
-            max-width: 1200px;
+            gap: 30px;
+            align-items: flex-start;
         }
-
-        #gameCanvas {
+        
+        .game-area {
+            flex: 1;
+            text-align: center;
+        }
+        
+        .canvas {
+            border: 3px solid #ffd700;
             border-radius: 10px;
+            background: linear-gradient(to bottom, #87ceeb, #98fb98);
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            cursor: pointer;
-            background: #87CEEB;
         }
-
-        .sidebar {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            width: 250px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        
+        .controls {
+            margin: 20px 0;
         }
-
-        .section-title {
-            font-size: 1.2em;
+        
+        .btn {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1rem;
             font-weight: bold;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(255,215,0,0.3);
         }
-
-        .leaderboard-entry {
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255,215,0,0.4);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .leaderboard {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .leaderboard h3 {
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            text-align: center;
+        }
+        
+        .player-leaderboard h3 {
+            color: #ffd700;
+        }
+        
+        .bot-leaderboard h3 {
+            color: #ff6347;
+        }
+        
+        .active-players h3 {
+            color: #00ff00;
+        }
+        
+        .score-item {
             display: flex;
             justify-content: space-between;
-            padding: 10px;
-            margin-bottom: 8px;
-            background: #f5f5f5;
-            border-radius: 5px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-
-        .score {
-            color: #3b82f6;
-            font-weight: bold;
+        
+        .score-item:last-child {
+            border-bottom: none;
         }
-
-        .empty-state {
-            color: #999;
-            font-size: 0.9em;
+        
+        .auth-container {
             text-align: center;
-            padding: 20px;
-        }
-
-        .live-players {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #eee;
-        }
-
-        .instructions {
-            color: white;
-            text-align: center;
-            margin-top: 20px;
-            font-size: 1.1em;
-        }
-
-        .modal {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background: white;
+            background: rgba(255,255,255,0.1);
             padding: 40px;
-            border-radius: 15px;
-            text-align: center;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
             max-width: 400px;
+            margin: 0 auto;
         }
-
-        .modal-content h2 {
-            margin-bottom: 20px;
-            font-size: 2em;
-        }
-
-        .modal-content input {
+        
+        .auth-input {
             width: 100%;
             padding: 12px;
-            font-size: 1.1em;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-
-        .modal-content button {
-            width: 100%;
-            padding: 15px;
-            font-size: 1.2em;
-            background: #10b981;
+            margin: 10px 0;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
             color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-top: 10px;
+            font-size: 1rem;
         }
-
-        .modal-content button:hover {
-            background: #059669;
+        
+        .auth-input::placeholder {
+            color: rgba(255,255,255,0.7);
         }
-
-        .slider-container {
+        
+        .auth-input:focus {
+            outline: none;
+            border-color: #ffd700;
+            box-shadow: 0 0 10px rgba(255,215,0,0.3);
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,215,0,0.3);
+            border-top: 4px solid #ffd700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .game-info {
             margin: 15px 0;
+            font-size: 0.9rem;
+            color: #ccc;
         }
-
-        .slider-container label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            font-size: 0.9em;
+        
+        .score-display {
+            font-size: 1.5rem;
+            margin: 10px 0;
+            color: #ffd700;
         }
-
-        .slider-container input[type="range"] {
-            width: 100%;
-        }
-
-        .game-over {
-            color: #dc2626;
-        }
-
-        .instructions-text {
-            font-size: 0.9em;
-            color: #666;
-            margin-top: 15px;
-        }
-
-        .countdown {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 120px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 4px 4px 8px rgba(0,0,0,0.5);
-            animation: pulse 0.5s ease-in-out;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: translate(-50%, -50%) scale(1); }
-            50% { transform: translate(-50%, -50%) scale(1.2); }
-        }
-
-        @media (max-width: 1024px) {
+        
+        @media (max-width: 768px) {
             .game-container {
                 flex-direction: column;
-                align-items: center;
             }
             
-            h1 {
-                font-size: 2em;
+            .sidebar {
+                width: 100%;
+            }
+            
+            .canvas {
+                width: 100%;
+                max-width: 400px;
+                height: 200px;
+            }
+            
+            .title {
+                font-size: 2rem;
             }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Multiplayer Flappy Bird</h1>
-    </div>
-
-    <div class="game-container">
-        <div style="position: relative;">
-            <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">🐦 Multiplayer Flappy Bird</h1>
+            <p class="subtitle">Compete with players worldwide!</p>
         </div>
-
-        <div class="sidebar">
-            <div class="section-title">
-                Leaderboard
-            </div>
-            <div id="leaderboard">
-                <div class="empty-state">No scores yet!</div>
-            </div>
-
-            <div class="live-players">
-                <div class="section-title">
-                    Live Players
-                </div>
-                <div id="liveCount" style="font-size: 0.9em; color: #666;">
-                    0 players online
-                </div>
+        
+        <div id="app">
+            <div class="loading">
+                <div class="spinner"></div>
             </div>
         </div>
-    </div>
-
-    <div class="instructions">
-        Press SPACE or Click to flap | See other players in real-time | AI opponents
     </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-
-        const GRAVITY = 0.25;
-        const JUMP_STRENGTH = -5.5;
-        const PIPE_WIDTH = 60;
-        const PIPE_GAP = 200;
-        const PIPE_SPEED = 1.5;
-        const BIRD_SIZE = 30;
-        const GAME_WIDTH = 800;
-        const GAME_HEIGHT = 600;
-        const GROUND_HEIGHT = 100;
-
-        let gameState = 'menu';
-        let bird = { y: 300, velocity: 0 };
-        let pipes = [];
-        let score = 0;
-        let highScore = 0;
-        let playerName = '';
-        let playerCode = '';
-        let playerId = localStorage.getItem('playerId') || `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        localStorage.setItem('playerId', playerId);
+        // Convex configuration
+        const CONVEX_URL = "https://steady-octopus-508.convex.cloud";
         
-        let sessionId = `session_${Date.now()}`;
-        let ghostPlayers = [];
-        let leaderboard = [];
-        let aiOpponents = [];
-        let aiCount = 2;
-        let frameCount = 0;
-        let countdown = 0;
-        let gameStarted = false;
-
-        // Use window.storage if available (Claude.ai), otherwise localStorage
-        const storage = window.storage ? {
-            async get(key, shared = true) {
-                try {
-                    return await window.storage.get(key, shared);
-                } catch (err) {
-                    return null;
-                }
-            },
-            async set(key, value, shared = true) {
-                try {
-                    return await window.storage.set(key, value, shared);
-                } catch (err) {
-                    return null;
-                }
-            },
-            async delete(key, shared = true) {
-                try {
-                    return await window.storage.delete(key, shared);
-                } catch (err) {
-                    return null;
-                }
-            },
-            async list(prefix, shared = true) {
-                try {
-                    return await window.storage.list(prefix, shared);
-                } catch (err) {
-                    return { keys: [] };
-                }
-            }
-        } : {
-            data: JSON.parse(localStorage.getItem('flappyStorage') || '{}'),
-            async get(key) {
-                await new Promise(r => setTimeout(r, 10));
-                return this.data[key] ? { value: this.data[key] } : null;
-            },
-            async set(key, value) {
-                await new Promise(r => setTimeout(r, 10));
-                this.data[key] = value;
-                localStorage.setItem('flappyStorage', JSON.stringify(this.data));
-                return { value };
-            },
-            async delete(key) {
-                await new Promise(r => setTimeout(r, 10));
-                delete this.data[key];
-                localStorage.setItem('flappyStorage', JSON.stringify(this.data));
-                return { deleted: true };
-            },
-            async list(prefix) {
-                await new Promise(r => setTimeout(r, 10));
-                const keys = Object.keys(this.data).filter(k => k.startsWith(prefix));
-                return { keys };
-            }
+        // Initialize Convex client
+        const convex = new Convex(CONVEX_URL);
+        
+        // Game state
+        let gameState = {
+            user: null,
+            gameStarted: false,
+            gameOver: false,
+            score: 0,
+            gameId: null,
+            gameSession: Math.random().toString(36).substring(7),
+            bird: { x: 50, y: 200, velocity: 0 },
+            botBird: { x: 50, y: 200, velocity: 0 },
+            pipes: [],
+            botScore: 0,
+            lastPipeTime: 0,
+            animationId: 0,
+            leaderboard: [],
+            botLeaderboard: [],
+            activeGames: []
         };
-
-        async function loadGameData() {
+        
+        // Game constants - Ultra slow and ultra floaty (1/3 speed, 3x floatiness)
+        const GRAVITY = 0.05;        // Reduced from 0.15 to 0.05 (3x more floaty)
+        const JUMP_STRENGTH = -1.3;  // Reduced from -4 to -1.3 (3x gentler jump)
+        const PIPE_WIDTH = 60;
+        const PIPE_GAP = 220;        // Increased from 180 to 220 (even bigger gap)
+        const PIPE_SPEED = 0.27;     // Reduced from 0.8 to 0.27 (1/3 speed)
+        
+        // Authentication functions
+        async function signIn(email, password) {
             try {
-                const [ghostsData, leaderboardData] = await Promise.all([
-                    storage.list('ghost:', true),
-                    storage.get('leaderboard', true)
-                ]);
-
-                if (ghostsData?.keys) {
-                    const ghosts = await Promise.all(
-                        ghostsData.keys.slice(0, 10).map(async (key) => {
-                            try {
-                                const data = await storage.get(key, true);
-                                if (!data || !data.value) return null;
-                                const parsed = JSON.parse(data.value);
-                                // Filter out old ghosts (older than 10 seconds)
-                                if (Date.now() - parsed.timestamp > 10000) return null;
-                                return parsed;
-                            } catch {
-                                return null;
-                            }
-                        })
-                    );
-                    // Filter out current player's ghosts by playerId
-                    ghostPlayers = ghosts.filter(g => g && g.playerId !== playerId);
-                }
-
-                if (leaderboardData && leaderboardData.value) {
-                    leaderboard = JSON.parse(leaderboardData.value);
-                    leaderboard.sort((a, b) => b.score - a.score);
-                    leaderboard = leaderboard.slice(0, 10);
-                    
-                    // Update local high score if player exists in leaderboard
-                    const myEntry = leaderboard.find(entry => 
-                        entry.playerId === playerId || 
-                        (entry.name === playerName && entry.code === playerCode)
-                    );
-                    if (myEntry) {
-                        highScore = myEntry.score;
-                    }
-                }
-
-                updateLeaderboardDisplay();
-            } catch (err) {
-                console.error('Error loading data:', err);
+                await convex.mutation("auth:signIn", { email, password });
+                await loadUser();
+            } catch (error) {
+                alert("Sign in failed: " + error.message);
             }
         }
-
-        async function updateGhostPosition() {
-            if (gameState !== 'playing' || !gameStarted) return;
-
+        
+        async function signUp(email, password, name) {
             try {
-                await storage.set(
-                    `ghost:${sessionId}`,
-                    JSON.stringify({
-                        sessionId,
-                        playerId,
-                        name: playerName || 'Anonymous',
-                        y: bird.y,
-                        score,
-                        timestamp: Date.now(),
-                        alive: true
-                    }),
-                    true
-                );
-            } catch (err) {
-                console.error('Error updating ghost:', err);
+                await convex.mutation("auth:signUp", { email, password, name });
+                await loadUser();
+            } catch (error) {
+                alert("Sign up failed: " + error.message);
             }
         }
-
-        async function saveScore(finalScore) {
-            if (finalScore === 0) return;
-
+        
+        async function signOut() {
             try {
-                const current = await storage.get('leaderboard', true);
-                let lb = current && current.value ? JSON.parse(current.value) : [];
-                
-                // Find existing entry by playerId AND verification code
-                const existingIndex = lb.findIndex(entry => 
-                    entry.playerId === playerId && entry.code === playerCode
-                );
-                
-                // Only update if new score is better
-                if (finalScore > highScore) {
-                    highScore = finalScore;
-                    
-                    const entry = {
-                        playerId,
-                        name: playerName || 'Anonymous',
-                        code: playerCode,
-                        score: finalScore,
-                        timestamp: Date.now()
-                    };
-                    
-                    if (existingIndex >= 0) {
-                        // Update existing entry
-                        lb[existingIndex] = entry;
-                    } else {
-                        // Add new entry
-                        lb.push(entry);
-                    }
-                    
-                    lb.sort((a, b) => b.score - a.score);
-                    const top10 = lb.slice(0, 10);
-
-                    const result = await storage.set('leaderboard', JSON.stringify(top10), true);
-                    console.log('Leaderboard saved:', result);
-                    leaderboard = top10;
-                    updateLeaderboardDisplay();
-                }
-
-                await storage.delete(`ghost:${sessionId}`, true);
-            } catch (err) {
-                console.error('Error saving score:', err);
+                await convex.mutation("auth:signOut", {});
+                gameState.user = null;
+                render();
+            } catch (error) {
+                console.error("Sign out error:", error);
             }
         }
-
-        function updateLeaderboardDisplay() {
-            const container = document.getElementById('leaderboard');
-            if (leaderboard.length === 0) {
-                container.innerHTML = '<div class="empty-state">No scores yet!</div>';
-            } else {
-                container.innerHTML = leaderboard.map((entry, i) => `
-                    <div class="leaderboard-entry">
-                        <span><strong>${i + 1}.</strong> ${entry.name}</span>
-                        <span class="score">${entry.score}</span>
-                    </div>
-                `).join('');
-            }
-
-            document.getElementById('liveCount').textContent = 
-                `${ghostPlayers.length} player${ghostPlayers.length !== 1 ? 's' : ''} online`;
-        }
-
-        function initializeAI() {
-            aiOpponents = [];
-            for (let i = 0; i < aiCount; i++) {
-                aiOpponents.push({
-                    id: `ai_${i}`,
-                    name: `Bot ${i + 1}`,
-                    y: 300,
-                    velocity: 0,
-                    score: 0,
-                    alive: true,
-                    difficulty: 0.7 + Math.random() * 0.3
-                });
+        
+        async function loadUser() {
+            try {
+                const user = await convex.query("auth:loggedInUser", {});
+                gameState.user = user;
+                render();
+            } catch (error) {
+                console.error("Load user error:", error);
             }
         }
-
-        function updateAI() {
-            aiOpponents = aiOpponents.map(ai => {
-                if (!ai.alive) return ai;
-
-                let newVelocity = ai.velocity + GRAVITY;
-                let newY = ai.y + newVelocity;
-
-                const nextPipe = pipes.find(p => p.x + PIPE_WIDTH > 150);
-                if (nextPipe) {
-                    const pipeCenter = nextPipe.y + PIPE_GAP / 2;
-                    const shouldJump = ai.y > pipeCenter - 20 && Math.random() < ai.difficulty;
-
-                    if (shouldJump) {
-                        newVelocity = JUMP_STRENGTH;
-                        newY = ai.y + newVelocity;
-                    }
-                }
-
-                const hitGround = newY > GAME_HEIGHT - GROUND_HEIGHT - BIRD_SIZE;
-                const hitCeiling = newY < 0;
-                const hitPipe = pipes.some(pipe => {
-                    const aiX = 100;
-                    return aiX + BIRD_SIZE > pipe.x &&
-                        aiX < pipe.x + PIPE_WIDTH &&
-                        (newY < pipe.y || newY + BIRD_SIZE > pipe.y + PIPE_GAP);
-                });
-
-                if (hitGround || hitCeiling || hitPipe) {
-                    return { ...ai, alive: false };
-                }
-
-                let newScore = ai.score;
-                pipes.forEach(pipe => {
-                    if (!pipe.aiScored && !pipe.aiScored) pipe.aiScored = {};
-                    if (!pipe.aiScored[ai.id] && pipe.x + PIPE_WIDTH < 100) {
-                        newScore++;
-                        pipe.aiScored[ai.id] = true;
-                    }
-                });
-
-                return { ...ai, y: newY, velocity: newVelocity, score: newScore };
-            });
-        }
-
-        function showMenu() {
-            const savedName = localStorage.getItem('playerName');
-            const savedCode = localStorage.getItem('playerCode');
+        
+        // Game functions
+        async function startGame() {
+            if (!gameState.user) return;
             
-            if (savedName && savedCode) {
-                playerName = savedName;
-                playerCode = savedCode;
-                startCountdown();
+            resetGame();
+            gameState.gameStarted = true;
+            
+            try {
+                const playerName = gameState.user.name || gameState.user.email || "Player";
+                gameState.gameId = await convex.mutation("game:startGame", {
+                    playerName,
+                    gameSession: gameState.gameSession
+                });
+                
+                gameLoop();
+                render();
+            } catch (error) {
+                console.error("Start game error:", error);
+            }
+        }
+        
+        function resetGame() {
+            gameState.bird = { x: 50, y: 200, velocity: 0 };
+            gameState.botBird = { x: 50, y: 200, velocity: 0 };
+            gameState.pipes = [];
+            gameState.botScore = 0;
+            gameState.lastPipeTime = 0;
+            gameState.score = 0;
+            gameState.gameOver = false;
+            
+            if (gameState.animationId) {
+                cancelAnimationFrame(gameState.animationId);
+            }
+        }
+        
+        function jump() {
+            if (!gameState.gameStarted || gameState.gameOver) return;
+            gameState.bird.velocity = JUMP_STRENGTH;
+        }
+        
+        function botAI() {
+            const nextPipe = gameState.pipes.find(pipe => pipe.x + PIPE_WIDTH > gameState.botBird.x);
+            
+            if (nextPipe) {
+                const pipeCenter = nextPipe.topHeight + PIPE_GAP / 2;
+                const birdY = gameState.botBird.y;
+                
+                // Adjusted AI for ultra slow, ultra floaty physics
+                if (birdY > pipeCenter - 50 || gameState.botBird.velocity > 1) {
+                    gameState.botBird.velocity = JUMP_STRENGTH;
+                }
+            }
+        }
+        
+        function gameLoop() {
+            const canvas = document.getElementById('gameCanvas');
+            if (!canvas || !gameState.gameStarted || gameState.gameOver) return;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#98FB98');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Update bird physics
+            gameState.bird.velocity += GRAVITY;
+            gameState.bird.y += gameState.bird.velocity;
+            
+            // Update bot bird physics
+            botAI();
+            gameState.botBird.velocity += GRAVITY;
+            gameState.botBird.y += gameState.botBird.velocity;
+            
+            // Generate pipes - much slower generation for ultra slow game
+            const now = Date.now();
+            if (now - gameState.lastPipeTime > 10500) { // Increased from 3500 to 10500ms (3x slower)
+                const topHeight = Math.random() * (canvas.height - PIPE_GAP - 100) + 50;
+                gameState.pipes.push({
+                    x: canvas.width,
+                    topHeight,
+                    bottomY: topHeight + PIPE_GAP,
+                    passed: false,
+                    botPassed: false
+                });
+                gameState.lastPipeTime = now;
+            }
+            
+            // Update and draw pipes
+            gameState.pipes = gameState.pipes.filter(pipe => {
+                pipe.x -= PIPE_SPEED;
+                
+                // Draw pipe
+                ctx.fillStyle = '#228B22';
+                ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+                ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, canvas.height - pipe.bottomY);
+                
+                // Pipe borders
+                ctx.strokeStyle = '#006400';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+                ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, canvas.height - pipe.bottomY);
+                
+                // Check scoring for player
+                if (!pipe.passed && pipe.x + PIPE_WIDTH < gameState.bird.x) {
+                    pipe.passed = true;
+                    gameState.score++;
+                    updateScore();
+                }
+                
+                // Check scoring for bot
+                if (!pipe.botPassed && pipe.x + PIPE_WIDTH < gameState.botBird.x) {
+                    pipe.botPassed = true;
+                    gameState.botScore++;
+                    updateBotScore();
+                }
+                
+                return pipe.x > -PIPE_WIDTH;
+            });
+            
+            // Check collisions for player
+            const birdCollision = gameState.bird.y <= 0 || 
+                                 gameState.bird.y >= canvas.height - 20 ||
+                                 gameState.pipes.some(pipe => 
+                                   gameState.bird.x + 20 > pipe.x && 
+                                   gameState.bird.x < pipe.x + PIPE_WIDTH &&
+                                   (gameState.bird.y < pipe.topHeight || gameState.bird.y + 20 > pipe.bottomY)
+                                 );
+            
+            // Check collisions for bot
+            const botCollision = gameState.botBird.y <= 0 || 
+                                gameState.botBird.y >= canvas.height - 20 ||
+                                gameState.pipes.some(pipe => 
+                                  gameState.botBird.x + 20 > pipe.x && 
+                                  gameState.botBird.x < pipe.x + PIPE_WIDTH &&
+                                  (gameState.botBird.y < pipe.topHeight || gameState.botBird.y + 20 > pipe.bottomY)
+                                );
+            
+            if (birdCollision) {
+                gameState.gameOver = true;
+                endGame();
+                render();
                 return;
             }
-
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.id = 'menuModal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <h2>Ready to Fly?</h2>
-                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" value="${savedName || ''}" />
-                    <input type="text" id="playerCodeInput" placeholder="Verification code (4-8 chars)" maxlength="8" value="${savedCode || ''}" />
-                    <div style="font-size: 0.85em; color: #666; margin: -10px 0 10px 0; text-align: left;">
-                        Save your code to keep your high score across devices!
-                    </div>
-                    <div class="slider-container">
-                        <label>AI Opponents: <span id="aiCountDisplay">${aiCount}</span></label>
-                        <input type="range" id="aiCountSlider" min="0" max="5" value="${aiCount}" />
-                    </div>
-                    <button onclick="startGame()">Start Game</button>
-                    <div class="instructions-text">Press SPACE or Click to flap</div>
-                </div>
-            `;
-            canvas.parentElement.appendChild(modal);
-
-            document.getElementById('aiCountSlider').addEventListener('input', (e) => {
-                aiCount = parseInt(e.target.value);
-                document.getElementById('aiCountDisplay').textContent = aiCount;
-            });
-
-            document.getElementById('playerNameInput').focus();
-            document.getElementById('playerCodeInput').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') startGame();
-            });
-            document.getElementById('playerNameInput').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    document.getElementById('playerCodeInput').focus();
-                }
-            });
-        }
-
-        function startGame() {
-            const nameInput = document.getElementById('playerNameInput');
-            const codeInput = document.getElementById('playerCodeInput');
             
-            if (nameInput) {
-                playerName = nameInput.value.trim();
-                if (!playerName) {
-                    alert('Please enter your name!');
-                    return;
-                }
+            if (botCollision) {
+                // Reset bot
+                gameState.botBird = { x: 50, y: 200, velocity: 0 };
+                gameState.botScore = 0;
             }
             
-            if (codeInput) {
-                playerCode = codeInput.value.trim();
-                if (!playerCode || playerCode.length < 4) {
-                    alert('Please enter a verification code (at least 4 characters)!');
-                    return;
-                }
-                localStorage.setItem('playerName', playerName);
-                localStorage.setItem('playerCode', playerCode);
-            }
-
-            const modal = document.getElementById('menuModal');
-            if (modal) modal.remove();
-
-            startCountdown();
+            // Draw player bird
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(gameState.bird.x, gameState.bird.y, 20, 20);
+            ctx.strokeStyle = '#FFA500';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(gameState.bird.x, gameState.bird.y, 20, 20);
+            
+            // Draw bot bird
+            ctx.fillStyle = '#FF6347';
+            ctx.fillRect(gameState.botBird.x, gameState.botBird.y, 20, 20);
+            ctx.strokeStyle = '#DC143C';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(gameState.botBird.x, gameState.botBird.y, 20, 20);
+            
+            // Draw scores
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 24px Arial';
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 3;
+            ctx.strokeText(`Your Score: ${gameState.score}`, 10, 30);
+            ctx.fillText(`Your Score: ${gameState.score}`, 10, 30);
+            ctx.strokeText(`Bot Score: ${gameState.botScore}`, 10, 60);
+            ctx.fillText(`Bot Score: ${gameState.botScore}`, 10, 60);
+            
+            gameState.animationId = requestAnimationFrame(gameLoop);
         }
-
-        function startCountdown() {
-            bird = { y: 300, velocity: 0 };
-            pipes = [];
-            score = 0;
-            gameState = 'countdown';
-            gameStarted = false;
-            countdown = 3;
-            initializeAI();
-            sessionId = `session_${Date.now()}`;
-
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                if (countdown === 0) {
-                    clearInterval(countdownInterval);
-                    gameState = 'playing';
-                    gameStarted = true;
-                    pipes.push({ 
-                        x: GAME_WIDTH, 
-                        y: Math.random() * (GAME_HEIGHT - GROUND_HEIGHT - PIPE_GAP - 100) + 50, 
-                        scored: false,
-                        aiScored: {}
+        
+        async function updateScore() {
+            if (gameState.gameId) {
+                try {
+                    await convex.mutation("game:updateScore", {
+                        gameId: gameState.gameId,
+                        score: gameState.score
                     });
+                } catch (error) {
+                    console.error("Update score error:", error);
                 }
-            }, 1000);
+            }
         }
-
-        function showGameOver() {
-            setTimeout(() => {
-                const modal = document.createElement('div');
-                modal.className = 'modal';
-                modal.id = 'gameOverModal';
-                modal.innerHTML = `
-                    <div class="modal-content">
-                        <h2 class="game-over">Game Over!</h2>
-                        <p style="font-size: 1.5em; margin: 20px 0;">Score: ${score}</p>
-                        ${highScore > 0 ? `<p style="font-size: 1.2em; color: #f59e0b; margin-bottom: 20px;">Best: ${highScore}</p>` : ''}
-                        <button onclick="respawn()">Try Again</button>
-                        <div class="instructions-text">Press SPACE to respawn</div>
+        
+        async function updateBotScore() {
+            try {
+                await convex.mutation("game:updateBotScore", {
+                    gameSession: gameState.gameSession,
+                    score: gameState.botScore
+                });
+            } catch (error) {
+                console.error("Update bot score error:", error);
+            }
+        }
+        
+        async function endGame() {
+            if (gameState.gameId) {
+                try {
+                    await convex.mutation("game:endGame", {
+                        gameId: gameState.gameId
+                    });
+                } catch (error) {
+                    console.error("End game error:", error);
+                }
+            }
+        }
+        
+        // Data loading functions
+        async function loadGameData() {
+            try {
+                const [leaderboard, botLeaderboard, activeGames] = await Promise.all([
+                    convex.query("game:getLeaderboard", {}),
+                    convex.query("game:getBotLeaderboard", {}),
+                    convex.query("game:getActiveGames", { gameSession: gameState.gameSession })
+                ]);
+                
+                gameState.leaderboard = leaderboard || [];
+                gameState.botLeaderboard = botLeaderboard || [];
+                gameState.activeGames = activeGames || [];
+                
+                render();
+            } catch (error) {
+                console.error("Load game data error:", error);
+            }
+        }
+        
+        // Render functions
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (gameState.user === undefined) {
+                app.innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
                     </div>
                 `;
-                canvas.parentElement.appendChild(modal);
-            }, 500);
-        }
-
-        function respawn() {
-            const modal = document.getElementById('gameOverModal');
-            if (modal) modal.remove();
-            startCountdown();
-        }
-
-        function jump() {
-            if (gameState === 'playing' && gameStarted) {
-                bird.velocity = JUMP_STRENGTH;
+                return;
             }
-        }
-
-        function gameLoop() {
-            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-            // Draw sky
-            ctx.fillStyle = '#4ec0ca';
-            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT - GROUND_HEIGHT);
-
-            // Draw ground
-            ctx.fillStyle = '#ded895';
-            ctx.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, GROUND_HEIGHT);
-            ctx.fillStyle = '#84c96a';
-            ctx.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, 20);
-
-            if (gameState === 'playing' || gameState === 'countdown') {
-                if (gameStarted) {
-                    frameCount++;
-
-                    // Update bird physics - super floaty!
-                    bird.velocity += GRAVITY;
-                    bird.velocity = Math.min(bird.velocity, 6); // Very low terminal velocity
-                    bird.y += bird.velocity;
-
-                    // Check collision with ground/ceiling
-                    if (bird.y > GAME_HEIGHT - GROUND_HEIGHT - BIRD_SIZE || bird.y < 0) {
-                        gameState = 'gameOver';
-                        saveScore(score);
-                        showGameOver();
-                    }
-
-                    // Update pipes
-                    pipes = pipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
-                    pipes = pipes.filter(pipe => pipe.x > -PIPE_WIDTH);
-
-                    if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 350) {
-                        pipes.push({
-                            x: GAME_WIDTH,
-                            y: Math.random() * (GAME_HEIGHT - GROUND_HEIGHT - PIPE_GAP - 100) + 50,
-                            scored: false,
-                            aiScored: {}
-                        });
-                    }
-
-                    // Check pipe collision
-                    const birdX = 100;
-                    pipes.forEach(pipe => {
-                        if (birdX + BIRD_SIZE > pipe.x &&
-                            birdX < pipe.x + PIPE_WIDTH &&
-                            (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
-                            gameState = 'gameOver';
-                            saveScore(score);
-                            showGameOver();
-                        }
-
-                        if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
-                            pipe.scored = true;
-                            score++;
-                        }
-                    });
-
-                    updateAI();
-
-                    if (frameCount % 10 === 0) {
-                        updateGhostPosition();
-                    }
-                }
+            
+            if (!gameState.user) {
+                renderAuth();
+                return;
             }
-
-            // Draw pipes
-            ctx.fillStyle = '#5cac48';
-            ctx.strokeStyle = '#3d7a2e';
-            ctx.lineWidth = 4;
-            pipes.forEach(pipe => {
-                // Top pipe
-                ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
-                ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
-                // Pipe cap
-                ctx.fillRect(pipe.x - 5, pipe.y - 25, PIPE_WIDTH + 10, 25);
-                ctx.strokeRect(pipe.x - 5, pipe.y - 25, PIPE_WIDTH + 10, 25);
-
-                // Bottom pipe
-                ctx.fillRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - GROUND_HEIGHT - pipe.y - PIPE_GAP);
-                ctx.strokeRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - GROUND_HEIGHT - pipe.y - PIPE_GAP);
-                // Pipe cap
-                ctx.fillRect(pipe.x - 5, pipe.y + PIPE_GAP, PIPE_WIDTH + 10, 25);
-                ctx.strokeRect(pipe.x - 5, pipe.y + PIPE_GAP, PIPE_WIDTH + 10, 25);
-            });
-
-            // Draw ghost players
-            ghostPlayers.forEach(ghost => {
-                if (ghost.y < GAME_HEIGHT - GROUND_HEIGHT) {
-                    ctx.globalAlpha = 0.4;
-                    ctx.fillStyle = '#9ca3af';
-                    ctx.beginPath();
-                    ctx.arc(100 + BIRD_SIZE / 2, ghost.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.globalAlpha = 1;
-
-                    ctx.fillStyle = '#4b5563';
-                    ctx.font = '11px Arial';
-                    ctx.fillText(`${ghost.name}: ${ghost.score}`, 100, ghost.y - 8);
-                }
-            });
-
-            // Draw AI opponents
-            aiOpponents.filter(ai => ai.alive).forEach(ai => {
-                if (ai.y < GAME_HEIGHT - GROUND_HEIGHT) {
-                    ctx.fillStyle = '#a855f7';
-                    ctx.beginPath();
-                    ctx.arc(100 + BIRD_SIZE / 2, ai.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.fillStyle = '#7c3aed';
-                    ctx.font = 'bold 11px Arial';
-                    ctx.fillText(`${ai.name}: ${ai.score}`, 100, ai.y - 8);
-                }
-            });
-
-            // Draw player bird
-            if (gameState !== 'menu') {
-                const rotation = Math.min(Math.max(bird.velocity * 3, -30), 90) * Math.PI / 180;
+            
+            renderGame();
+        }
+        
+        function renderAuth() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="auth-container">
+                    <h2 style="margin-bottom: 20px; color: #ffd700;">Sign In to Play</h2>
+                    <form id="authForm">
+                        <input type="email" id="email" placeholder="Email" class="auth-input" required>
+                        <input type="password" id="password" placeholder="Password" class="auth-input" required>
+                        <input type="text" id="name" placeholder="Display Name (for sign up)" class="auth-input">
+                        <div style="margin-top: 20px;">
+                            <button type="button" onclick="handleSignIn()" class="btn" style="margin: 5px;">Sign In</button>
+                            <button type="button" onclick="handleSignUp()" class="btn" style="margin: 5px;">Sign Up</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+        }
+        
+        function renderGame() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div style="text-align: right; margin-bottom: 20px;">
+                    <span style="margin-right: 15px;">Welcome, ${gameState.user.name || gameState.user.email}!</span>
+                    <button onclick="signOut()" class="btn" style="padding: 8px 16px; font-size: 0.9rem;">Sign Out</button>
+                </div>
                 
-                ctx.save();
-                ctx.translate(100 + BIRD_SIZE / 2, bird.y + BIRD_SIZE / 2);
-                ctx.rotate(rotation);
-                
-                // Bird body
-                ctx.fillStyle = '#ffd900';
-                ctx.strokeStyle = '#e0b800';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(0, 0, BIRD_SIZE / 2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-
-                // Wing
-                ctx.fillStyle = '#ffeb3b';
-                ctx.beginPath();
-                ctx.ellipse(-5, 2, 8, 12, 0.3, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Eye white
-                ctx.fillStyle = 'white';
-                ctx.beginPath();
-                ctx.arc(5, -3, 6, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Eye pupil
-                ctx.fillStyle = 'black';
-                ctx.beginPath();
-                ctx.arc(7, -3, 3, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Beak
-                ctx.fillStyle = '#ff8c00';
-                ctx.beginPath();
-                ctx.moveTo(12, 0);
-                ctx.lineTo(20, -2);
-                ctx.lineTo(20, 2);
-                ctx.closePath();
-                ctx.fill();
-
-                ctx.restore();
-            }
-
-            // Draw score
-            if (gameState === 'playing' || gameState === 'gameOver') {
-                ctx.fillStyle = 'white';
-                ctx.strokeStyle = 'black';
-                ctx.lineWidth = 4;
-                ctx.font = 'bold 48px Arial';
-                ctx.textAlign = 'center';
-                ctx.strokeText(score, GAME_WIDTH / 2, 60);
-                ctx.fillText(score, GAME_WIDTH / 2, 60);
-            }
-
-            // Draw countdown
-            if (gameState === 'countdown' && countdown > 0) {
-                ctx.fillStyle = 'white';
-                ctx.strokeStyle = 'black';
-                ctx.lineWidth = 6;
-                ctx.font = 'bold 120px Arial';
-                ctx.textAlign = 'center';
-                ctx.strokeText(countdown, GAME_WIDTH / 2, GAME_HEIGHT / 2);
-                ctx.fillText(countdown, GAME_WIDTH / 2, GAME_HEIGHT / 2);
-            }
-
-            requestAnimationFrame(gameLoop);
+                <div class="game-container">
+                    <div class="game-area">
+                        <div class="controls">
+                            ${!gameState.gameStarted ? `
+                                <button onclick="startGame()" class="btn">Start Game</button>
+                            ` : gameState.gameOver ? `
+                                <div class="score-display">Game Over! Final Score: ${gameState.score}</div>
+                                <button onclick="startGame()" class="btn">Play Again</button>
+                            ` : `
+                                <div class="score-display">Score: ${gameState.score}</div>
+                                <p style="color: #ccc;">Press SPACEBAR or click to jump!</p>
+                            `}
+                        </div>
+                        
+                        <canvas id="gameCanvas" width="800" height="400" class="canvas" onclick="jump()"></canvas>
+                        
+                        <div class="game-info">
+                            🟡 Yellow = You | 🔴 Red = AI Bot | 🟢 Green = Other Players
+                            <br><em>Ultra slow and ultra floaty physics - zen mode!</em>
+                        </div>
+                    </div>
+                    
+                    <div class="sidebar">
+                        <div class="leaderboard player-leaderboard">
+                            <h3>🏆 Player Leaderboard</h3>
+                            ${gameState.leaderboard.length > 0 ? 
+                                gameState.leaderboard.map((entry, index) => `
+                                    <div class="score-item">
+                                        <span>${index + 1}. ${entry.playerName}</span>
+                                        <span>${entry.highScore}</span>
+                                    </div>
+                                `).join('') : 
+                                '<p style="text-align: center; color: #ccc;">No scores yet</p>'
+                            }
+                        </div>
+                        
+                        <div class="leaderboard bot-leaderboard">
+                            <h3>🤖 Bot Leaderboard</h3>
+                            ${gameState.botLeaderboard.length > 0 ? 
+                                gameState.botLeaderboard.map((entry, index) => `
+                                    <div class="score-item">
+                                        <span>${index + 1}. ${entry.playerName}</span>
+                                        <span>${entry.highScore}</span>
+                                    </div>
+                                `).join('') : 
+                                '<p style="text-align: center; color: #ccc;">No bot scores yet</p>'
+                            }
+                        </div>
+                        
+                        <div class="leaderboard active-players">
+                            <h3>🟢 Active Players</h3>
+                            ${gameState.activeGames.filter(game => !game.isBot).length > 0 ? 
+                                gameState.activeGames.filter(game => !game.isBot).map(game => `
+                                    <div class="score-item">
+                                        <span>${game.playerName}</span>
+                                        <span>${game.score}</span>
+                                    </div>
+                                `).join('') : 
+                                '<p style="text-align: center; color: #ccc;">No active players</p>'
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
         }
-
-        // Event listeners
-        let canJump = true;
-        let jumpCooldown = 200; // Increased to 200ms for slower, more deliberate jumps
-
-        canvas.addEventListener('click', () => {
-            if (canJump) {
-                jump();
-                canJump = false;
-                setTimeout(() => canJump = true, jumpCooldown);
-            }
-        });
-
-        let spacePressed = false;
+        
+        // Event handlers
+        async function handleSignIn() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            await signIn(email, password);
+        }
+        
+        async function handleSignUp() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const name = document.getElementById('name').value;
+            await signUp(email, password, name);
+        }
+        
+        // Keyboard controls
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
-                if (gameState === 'menu') {
-                    const input = document.getElementById('playerNameInput');
-                    if (input) startGame();
-                } else if (gameState === 'playing' && !spacePressed && canJump) {
-                    jump();
-                    spacePressed = true;
-                    canJump = false;
-                    setTimeout(() => canJump = true, jumpCooldown);
-                } else if (gameState === 'gameOver' && !spacePressed) {
-                    respawn();
-                    spacePressed = true;
-                }
+                jump();
             }
         });
-
-        document.addEventListener('keyup', (e) => {
-            if (e.code === 'Space') {
-                spacePressed = false;
-            }
-        });
-
-        // Initialize
-        loadGameData();
-        setInterval(loadGameData, 2000);
         
-        // Check if player has saved credentials
-        const savedName = localStorage.getItem('playerName');
-        const savedCode = localStorage.getItem('playerCode');
-        if (savedName && savedCode) {
-            playerName = savedName;
-            playerCode = savedCode;
+        // Initialize app
+        async function init() {
+            await loadUser();
+            
+            // Set up real-time subscriptions
+            setInterval(loadGameData, 2000); // Update every 2 seconds
         }
         
-        showMenu();
-        gameLoop();
+        // Start the app
+        init();
     </script>
 </body>
 </html>
