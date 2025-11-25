@@ -1,478 +1,643 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trophy, Users, Cpu } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Flappy Bird</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-const GRAVITY = 0.6;
-const JUMP_STRENGTH = -10;
-const PIPE_WIDTH = 60;
-const PIPE_GAP = 180;
-const PIPE_SPEED = 3;
-const BIRD_SIZE = 30;
-const GAME_WIDTH = 800;
-const GAME_HEIGHT = 600;
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(to bottom, #87CEEB, #87CEEB);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-export default function FlappyBirdMultiplayer() {
-  const [gameState, setGameState] = useState('menu'); // menu, playing, gameOver
-  const [bird, setBird] = useState({ y: 300, velocity: 0 });
-  const [pipes, setPipes] = useState([]);
-  const [score, setScore] = useState(0);
-  const [playerName, setPlayerName] = useState('');
-  const [sessionId] = useState(() => `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
-  const [ghostPlayers, setGhostPlayers] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [aiOpponents, setAiOpponents] = useState([]);
-  const [aiCount, setAiCount] = useState(2);
-  
-  const gameLoopRef = useRef(null);
-  const frameCountRef = useRef(0);
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
 
-  // Load data from storage
-  useEffect(() => {
-    loadGameData();
-    const interval = setInterval(loadGameData, 2000);
-    return () => clearInterval(interval);
-  }, []);
+        h1 {
+            color: white;
+            font-size: 3em;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.3);
+            margin-bottom: 10px;
+        }
 
-  const loadGameData = async () => {
-    try {
-      const [ghostsData, leaderboardData] = await Promise.all([
-        window.storage.list('ghost:', true).catch(() => ({ keys: [] })),
-        window.storage.get('leaderboard', true).catch(() => null)
-      ]);
+        .game-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+        }
 
-      if (ghostsData?.keys) {
-        const ghosts = await Promise.all(
-          ghostsData.keys.slice(0, 10).map(async (key) => {
-            try {
-              const data = await window.storage.get(key, true);
-              return data ? JSON.parse(data.value) : null;
-            } catch {
-              return null;
+        #gameCanvas {
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            cursor: pointer;
+            background: #87CEEB;
+        }
+
+        .sidebar {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            width: 250px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .section-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .leaderboard-entry {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .score {
+            color: #3b82f6;
+            font-weight: bold;
+        }
+
+        .empty-state {
+            color: #999;
+            font-size: 0.9em;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .live-players {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+
+        .instructions {
+            color: white;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 1.1em;
+        }
+
+        .modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .modal-content button {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .modal-content button:hover {
+            background: #059669;
+        }
+
+        .slider-container {
+            margin: 15px 0;
+        }
+
+        .slider-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .slider-container input[type="range"] {
+            width: 100%;
+        }
+
+        .game-over {
+            color: #dc2626;
+        }
+
+        .instructions-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 15px;
+        }
+
+        @media (max-width: 1024px) {
+            .game-container {
+                flex-direction: column;
+                align-items: center;
             }
-          })
-        );
-        setGhostPlayers(ghosts.filter(g => g && g.sessionId !== sessionId));
-      }
-
-      if (leaderboardData) {
-        const lb = JSON.parse(leaderboardData.value);
-        setLeaderboard(lb.sort((a, b) => b.score - a.score).slice(0, 10));
-      }
-    } catch (err) {
-      console.error('Error loading data:', err);
-    }
-  };
-
-  const updateGhostPosition = async () => {
-    if (gameState !== 'playing') return;
-    
-    try {
-      await window.storage.set(
-        `ghost:${sessionId}`,
-        JSON.stringify({
-          sessionId,
-          name: playerName || 'Anonymous',
-          y: bird.y,
-          score,
-          timestamp: Date.now(),
-          alive: true
-        }),
-        true
-      );
-    } catch (err) {
-      console.error('Error updating ghost:', err);
-    }
-  };
-
-  const saveScore = async (finalScore) => {
-    try {
-      const entry = {
-        name: playerName || 'Anonymous',
-        score: finalScore,
-        timestamp: Date.now()
-      };
-
-      const current = await window.storage.get('leaderboard', true).catch(() => null);
-      const lb = current ? JSON.parse(current.value) : [];
-      lb.push(entry);
-      lb.sort((a, b) => b.score - a.score);
-      const top10 = lb.slice(0, 10);
-      
-      await window.storage.set('leaderboard', JSON.stringify(top10), true);
-      setLeaderboard(top10);
-
-      await window.storage.delete(`ghost:${sessionId}`, true).catch(() => {});
-    } catch (err) {
-      console.error('Error saving score:', err);
-    }
-  };
-
-  const jump = useCallback(() => {
-    if (gameState === 'playing') {
-      setBird(prev => ({ ...prev, velocity: JUMP_STRENGTH }));
-    }
-  }, [gameState]);
-
-  useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (e.code === 'Space') {
-        e.preventDefault();
-        if (gameState === 'menu') {
-          startGame();
-        } else if (gameState === 'playing') {
-          jump();
-        } else if (gameState === 'gameOver') {
-          resetGame();
+            
+            h1 {
+                font-size: 2em;
+            }
         }
-      }
-    };
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🐦 Multiplayer Flappy Bird 🐦</h1>
+    </div>
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [gameState, jump]);
+    <div class="game-container">
+        <div style="position: relative;">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+        </div>
 
-  const initializeAI = () => {
-    const ais = [];
-    for (let i = 0; i < aiCount; i++) {
-      ais.push({
-        id: `ai_${i}`,
-        name: `Bot ${i + 1}`,
-        y: 300,
-        velocity: 0,
-        score: 0,
-        alive: true,
-        difficulty: 0.7 + Math.random() * 0.3 // 0.7-1.0 reaction skill
-      });
-    }
-    setAiOpponents(ais);
-  };
+        <div class="sidebar">
+            <div class="section-title">
+                🏆 Leaderboard
+            </div>
+            <div id="leaderboard">
+                <div class="empty-state">No scores yet!</div>
+            </div>
 
-  const updateAI = (currentPipes) => {
-    setAiOpponents(prev => prev.map(ai => {
-      if (!ai.alive) return ai;
+            <div class="live-players">
+                <div class="section-title">
+                    👥 Live Players
+                </div>
+                <div id="liveCount" style="font-size: 0.9em; color: #666;">
+                    0 players online
+                </div>
+            </div>
+        </div>
+    </div>
 
-      let newVelocity = ai.velocity + GRAVITY;
-      let newY = ai.y + newVelocity;
+    <div class="instructions">
+        🎮 Press SPACE or Click to flap | 👻 See other players in real-time | 🤖 AI opponents
+    </div>
 
-      // AI decision making
-      const nextPipe = currentPipes.find(p => p.x + PIPE_WIDTH > 150);
-      if (nextPipe) {
-        const pipeCenter = nextPipe.y + PIPE_GAP / 2;
-        const shouldJump = ai.y > pipeCenter - 20 && Math.random() < ai.difficulty;
-        
-        if (shouldJump) {
-          newVelocity = JUMP_STRENGTH;
-          newY = ai.y + newVelocity;
-        }
-      }
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-      // Check collisions
-      const hitGround = newY > GAME_HEIGHT - BIRD_SIZE || newY < 0;
-      const hitPipe = currentPipes.some(pipe => {
-        const aiX = 100;
-        return aiX + BIRD_SIZE > pipe.x && 
-               aiX < pipe.x + PIPE_WIDTH &&
-               (newY < pipe.y || newY + BIRD_SIZE > pipe.y + PIPE_GAP);
-      });
+        const GRAVITY = 0.6;
+        const JUMP_STRENGTH = -10;
+        const PIPE_WIDTH = 60;
+        const PIPE_GAP = 180;
+        const PIPE_SPEED = 3;
+        const BIRD_SIZE = 30;
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 600;
 
-      if (hitGround || hitPipe) {
-        return { ...ai, alive: false };
-      }
+        let gameState = 'menu';
+        let bird = { y: 300, velocity: 0 };
+        let pipes = [];
+        let score = 0;
+        let playerName = '';
+        let sessionId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        let ghostPlayers = [];
+        let leaderboard = [];
+        let aiOpponents = [];
+        let aiCount = 2;
+        let frameCount = 0;
 
-      // Update score
-      let newScore = ai.score;
-      currentPipes.forEach(pipe => {
-        if (!pipe.scored && pipe.x + PIPE_WIDTH < 100) {
-          newScore++;
-          pipe.scored = true;
-        }
-      });
+        // Storage simulation for local testing (replace with actual backend)
+        const storage = {
+            data: {},
+            async get(key) {
+                await new Promise(r => setTimeout(r, 10));
+                return this.data[key] ? { value: this.data[key] } : null;
+            },
+            async set(key, value) {
+                await new Promise(r => setTimeout(r, 10));
+                this.data[key] = value;
+                return { value };
+            },
+            async delete(key) {
+                await new Promise(r => setTimeout(r, 10));
+                delete this.data[key];
+                return { deleted: true };
+            },
+            async list(prefix) {
+                await new Promise(r => setTimeout(r, 10));
+                const keys = Object.keys(this.data).filter(k => k.startsWith(prefix));
+                return { keys };
+            }
+        };
 
-      return { ...ai, y: newY, velocity: newVelocity, score: newScore };
-    }));
-  };
+        async function loadGameData() {
+            try {
+                const ghostsData = await storage.list('ghost:');
+                const leaderboardData = await storage.get('leaderboard');
 
-  const startGame = () => {
-    if (!playerName.trim()) {
-      alert('Please enter your name!');
-      return;
-    }
-    
-    setBird({ y: 300, velocity: 0 });
-    setPipes([{ x: GAME_WIDTH, y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100, scored: false }]);
-    setScore(0);
-    setGameState('playing');
-    initializeAI();
-  };
+                if (ghostsData?.keys) {
+                    const ghosts = await Promise.all(
+                        ghostsData.keys.slice(0, 10).map(async (key) => {
+                            try {
+                                const data = await storage.get(key);
+                                return data ? JSON.parse(data.value) : null;
+                            } catch {
+                                return null;
+                            }
+                        })
+                    );
+                    ghostPlayers = ghosts.filter(g => g && g.sessionId !== sessionId);
+                }
 
-  const resetGame = () => {
-    setGameState('menu');
-    setGhostPlayers([]);
-    setAiOpponents([]);
-  };
+                if (leaderboardData) {
+                    leaderboard = JSON.parse(leaderboardData.value);
+                    leaderboard.sort((a, b) => b.score - a.score);
+                    leaderboard = leaderboard.slice(0, 10);
+                }
 
-  useEffect(() => {
-    if (gameState !== 'playing') {
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
-      }
-      return;
-    }
-
-    const gameLoop = () => {
-      frameCountRef.current++;
-
-      // Update bird
-      setBird(prev => {
-        const newVelocity = prev.velocity + GRAVITY;
-        const newY = prev.y + newVelocity;
-
-        // Check collisions
-        if (newY > GAME_HEIGHT - BIRD_SIZE || newY < 0) {
-          setGameState('gameOver');
-          saveScore(score);
-          return prev;
+                updateLeaderboardDisplay();
+            } catch (err) {
+                console.error('Error loading data:', err);
+            }
         }
 
-        return { y: newY, velocity: newVelocity };
-      });
+        async function updateGhostPosition() {
+            if (gameState !== 'playing') return;
 
-      // Update pipes
-      setPipes(prev => {
-        let newPipes = prev.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
-        
-        // Remove off-screen pipes
-        newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
-        
-        // Add new pipes
-        if (newPipes.length === 0 || newPipes[newPipes.length - 1].x < GAME_WIDTH - 300) {
-          newPipes.push({
-            x: GAME_WIDTH,
-            y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100,
-            scored: false
-          });
+            try {
+                await storage.set(
+                    `ghost:${sessionId}`,
+                    JSON.stringify({
+                        sessionId,
+                        name: playerName || 'Anonymous',
+                        y: bird.y,
+                        score,
+                        timestamp: Date.now(),
+                        alive: true
+                    })
+                );
+            } catch (err) {
+                console.error('Error updating ghost:', err);
+            }
         }
 
-        // Check pipe collision
-        const birdX = 100;
-        newPipes.forEach(pipe => {
-          if (birdX + BIRD_SIZE > pipe.x && 
-              birdX < pipe.x + PIPE_WIDTH &&
-              (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
-            setGameState('gameOver');
-            saveScore(score);
-          }
+        async function saveScore(finalScore) {
+            try {
+                const entry = {
+                    name: playerName || 'Anonymous',
+                    score: finalScore,
+                    timestamp: Date.now()
+                };
 
-          // Update score
-          if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
-            pipe.scored = true;
-            setScore(s => s + 1);
-          }
+                const current = await storage.get('leaderboard');
+                const lb = current ? JSON.parse(current.value) : [];
+                lb.push(entry);
+                lb.sort((a, b) => b.score - a.score);
+                const top10 = lb.slice(0, 10);
+
+                await storage.set('leaderboard', JSON.stringify(top10));
+                leaderboard = top10;
+                updateLeaderboardDisplay();
+
+                await storage.delete(`ghost:${sessionId}`);
+            } catch (err) {
+                console.error('Error saving score:', err);
+            }
+        }
+
+        function updateLeaderboardDisplay() {
+            const container = document.getElementById('leaderboard');
+            if (leaderboard.length === 0) {
+                container.innerHTML = '<div class="empty-state">No scores yet!</div>';
+            } else {
+                container.innerHTML = leaderboard.map((entry, i) => `
+                    <div class="leaderboard-entry">
+                        <span><strong>${i + 1}.</strong> ${entry.name}</span>
+                        <span class="score">${entry.score}</span>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('liveCount').textContent = 
+                `${ghostPlayers.length} player${ghostPlayers.length !== 1 ? 's' : ''} online`;
+        }
+
+        function initializeAI() {
+            aiOpponents = [];
+            for (let i = 0; i < aiCount; i++) {
+                aiOpponents.push({
+                    id: `ai_${i}`,
+                    name: `Bot ${i + 1}`,
+                    y: 300,
+                    velocity: 0,
+                    score: 0,
+                    alive: true,
+                    difficulty: 0.7 + Math.random() * 0.3
+                });
+            }
+        }
+
+        function updateAI() {
+            aiOpponents = aiOpponents.map(ai => {
+                if (!ai.alive) return ai;
+
+                let newVelocity = ai.velocity + GRAVITY;
+                let newY = ai.y + newVelocity;
+
+                const nextPipe = pipes.find(p => p.x + PIPE_WIDTH > 150);
+                if (nextPipe) {
+                    const pipeCenter = nextPipe.y + PIPE_GAP / 2;
+                    const shouldJump = ai.y > pipeCenter - 20 && Math.random() < ai.difficulty;
+
+                    if (shouldJump) {
+                        newVelocity = JUMP_STRENGTH;
+                        newY = ai.y + newVelocity;
+                    }
+                }
+
+                const hitGround = newY > GAME_HEIGHT - BIRD_SIZE || newY < 0;
+                const hitPipe = pipes.some(pipe => {
+                    const aiX = 100;
+                    return aiX + BIRD_SIZE > pipe.x &&
+                        aiX < pipe.x + PIPE_WIDTH &&
+                        (newY < pipe.y || newY + BIRD_SIZE > pipe.y + PIPE_GAP);
+                });
+
+                if (hitGround || hitPipe) {
+                    return { ...ai, alive: false };
+                }
+
+                let newScore = ai.score;
+                pipes.forEach(pipe => {
+                    if (!pipe.scored && pipe.x + PIPE_WIDTH < 100) {
+                        newScore++;
+                    }
+                });
+
+                return { ...ai, y: newY, velocity: newVelocity, score: newScore };
+            });
+        }
+
+        function showMenu() {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'menuModal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h2>Ready to Fly?</h2>
+                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" />
+                    <div class="slider-container">
+                        <label>AI Opponents: <span id="aiCountDisplay">${aiCount}</span></label>
+                        <input type="range" id="aiCountSlider" min="0" max="5" value="${aiCount}" />
+                    </div>
+                    <button onclick="startGame()">Start Game</button>
+                    <div class="instructions-text">Press SPACE or Click to flap</div>
+                </div>
+            `;
+            canvas.parentElement.appendChild(modal);
+
+            document.getElementById('aiCountSlider').addEventListener('input', (e) => {
+                aiCount = parseInt(e.target.value);
+                document.getElementById('aiCountDisplay').textContent = aiCount;
+            });
+
+            document.getElementById('playerNameInput').focus();
+            document.getElementById('playerNameInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') startGame();
+            });
+        }
+
+        function startGame() {
+            playerName = document.getElementById('playerNameInput').value.trim();
+            if (!playerName) {
+                alert('Please enter your name!');
+                return;
+            }
+
+            const modal = document.getElementById('menuModal');
+            if (modal) modal.remove();
+
+            bird = { y: 300, velocity: 0 };
+            pipes = [{ x: GAME_WIDTH, y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100, scored: false }];
+            score = 0;
+            gameState = 'playing';
+            initializeAI();
+        }
+
+        function showGameOver() {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'gameOverModal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h2 class="game-over">Game Over!</h2>
+                    <p style="font-size: 1.5em; margin: 20px 0;">Score: ${score}</p>
+                    <button onclick="resetGame()">Play Again</button>
+                    <div class="instructions-text">Press SPACE to restart</div>
+                </div>
+            `;
+            canvas.parentElement.appendChild(modal);
+        }
+
+        function resetGame() {
+            const modal = document.getElementById('gameOverModal');
+            if (modal) modal.remove();
+            gameState = 'menu';
+            ghostPlayers = [];
+            aiOpponents = [];
+            showMenu();
+        }
+
+        function jump() {
+            if (gameState === 'playing') {
+                bird.velocity = JUMP_STRENGTH;
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Draw background
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            if (gameState === 'playing') {
+                frameCount++;
+
+                // Update bird
+                bird.velocity += GRAVITY;
+                bird.y += bird.velocity;
+
+                // Check collision with ground/ceiling
+                if (bird.y > GAME_HEIGHT - BIRD_SIZE || bird.y < 0) {
+                    gameState = 'gameOver';
+                    saveScore(score);
+                    showGameOver();
+                }
+
+                // Update pipes
+                pipes = pipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+                pipes = pipes.filter(pipe => pipe.x > -PIPE_WIDTH);
+
+                if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 300) {
+                    pipes.push({
+                        x: GAME_WIDTH,
+                        y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100,
+                        scored: false
+                    });
+                }
+
+                // Check pipe collision
+                const birdX = 100;
+                pipes.forEach(pipe => {
+                    if (birdX + BIRD_SIZE > pipe.x &&
+                        birdX < pipe.x + PIPE_WIDTH &&
+                        (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
+                        gameState = 'gameOver';
+                        saveScore(score);
+                        showGameOver();
+                    }
+
+                    if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
+                        pipe.scored = true;
+                        score++;
+                    }
+                });
+
+                updateAI();
+
+                if (frameCount % 10 === 0) {
+                    updateGhostPosition();
+                }
+            }
+
+            // Draw pipes
+            ctx.fillStyle = '#16a34a';
+            ctx.strokeStyle = '#15803d';
+            ctx.lineWidth = 4;
+            pipes.forEach(pipe => {
+                ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
+                ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
+                ctx.fillRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - pipe.y - PIPE_GAP);
+                ctx.strokeRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, GAME_HEIGHT - pipe.y - PIPE_GAP);
+            });
+
+            // Draw ghost players
+            ghostPlayers.forEach(ghost => {
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = '#9ca3af';
+                ctx.beginPath();
+                ctx.arc(100 + BIRD_SIZE / 2, ghost.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+
+                ctx.fillStyle = '#4b5563';
+                ctx.font = '12px Arial';
+                ctx.fillText(`${ghost.name}: ${ghost.score}`, 100, ghost.y - 10);
+            });
+
+            // Draw AI opponents
+            aiOpponents.filter(ai => ai.alive).forEach(ai => {
+                ctx.fillStyle = '#a855f7';
+                ctx.beginPath();
+                ctx.arc(100 + BIRD_SIZE / 2, ai.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#7c3aed';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillText(`${ai.name}: ${ai.score}`, 100, ai.y - 10);
+            });
+
+            // Draw player bird
+            if (gameState !== 'menu') {
+                ctx.fillStyle = '#facc15';
+                ctx.strokeStyle = '#ca8a04';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(100 + BIRD_SIZE / 2, bird.y + BIRD_SIZE / 2, BIRD_SIZE / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw eye
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(100 + BIRD_SIZE / 2 + 5, bird.y + BIRD_SIZE / 2 - 3, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw score
+            if (gameState === 'playing') {
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 3;
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.strokeText(score, GAME_WIDTH / 2, 60);
+                ctx.fillText(score, GAME_WIDTH / 2, 60);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event listeners
+        canvas.addEventListener('click', jump);
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameState === 'menu') {
+                    const input = document.getElementById('playerNameInput');
+                    if (input) startGame();
+                } else if (gameState === 'playing') {
+                    jump();
+                } else if (gameState === 'gameOver') {
+                    resetGame();
+                }
+            }
         });
 
-        updateAI(newPipes);
-        
-        return newPipes;
-      });
-
-      // Update ghost position every 10 frames
-      if (frameCountRef.current % 10 === 0) {
-        updateGhostPosition();
-      }
-
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
-    };
-
-    gameLoopRef.current = requestAnimationFrame(gameLoop);
-
-    return () => {
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
-      }
-    };
-  }, [gameState, bird.y, score, playerName, sessionId]);
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-sky-400 to-sky-300 p-4">
-      <div className="mb-4 text-center">
-        <h1 className="text-4xl font-bold text-white mb-2" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
-          Multiplayer Flappy Bird
-        </h1>
-      </div>
-
-      <div className="flex gap-4 w-full max-w-6xl">
-        {/* Game Canvas */}
-        <div className="relative bg-sky-200 rounded-lg shadow-2xl overflow-hidden" 
-             style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}
-             onClick={jump}>
-          
-          {/* Pipes */}
-          {pipes.map((pipe, i) => (
-            <React.Fragment key={i}>
-              <div className="absolute bg-green-600 border-4 border-green-700 rounded"
-                   style={{ 
-                     left: pipe.x, 
-                     top: 0, 
-                     width: PIPE_WIDTH, 
-                     height: pipe.y 
-                   }} />
-              <div className="absolute bg-green-600 border-4 border-green-700 rounded"
-                   style={{ 
-                     left: pipe.x, 
-                     top: pipe.y + PIPE_GAP, 
-                     width: PIPE_WIDTH, 
-                     height: GAME_HEIGHT - pipe.y - PIPE_GAP 
-                   }} />
-            </React.Fragment>
-          ))}
-
-          {/* Ghost Players */}
-          {ghostPlayers.map(ghost => (
-            <div key={ghost.sessionId} className="absolute transition-all duration-100"
-                 style={{ 
-                   left: 100, 
-                   top: ghost.y, 
-                   width: BIRD_SIZE, 
-                   height: BIRD_SIZE 
-                 }}>
-              <div className="w-full h-full rounded-full bg-gray-400 opacity-50 flex items-center justify-center text-xs">
-                👻
-              </div>
-              <div className="absolute -top-6 left-0 text-xs text-gray-600 whitespace-nowrap">
-                {ghost.name}: {ghost.score}
-              </div>
-            </div>
-          ))}
-
-          {/* AI Opponents */}
-          {aiOpponents.filter(ai => ai.alive).map(ai => (
-            <div key={ai.id} className="absolute transition-all duration-100"
-                 style={{ 
-                   left: 100, 
-                   top: ai.y, 
-                   width: BIRD_SIZE, 
-                   height: BIRD_SIZE 
-                 }}>
-              <div className="w-full h-full rounded-full bg-purple-500 flex items-center justify-center">
-                <Cpu size={16} className="text-white" />
-              </div>
-              <div className="absolute -top-6 left-0 text-xs text-purple-700 whitespace-nowrap font-bold">
-                {ai.name}: {ai.score}
-              </div>
-            </div>
-          ))}
-
-          {/* Player Bird */}
-          {gameState !== 'menu' && (
-            <div className="absolute transition-all duration-100"
-                 style={{ 
-                   left: 100, 
-                   top: bird.y, 
-                   width: BIRD_SIZE, 
-                   height: BIRD_SIZE 
-                 }}>
-              <div className="w-full h-full rounded-full bg-yellow-400 border-2 border-yellow-600 flex items-center justify-center text-lg">
-                🐦
-              </div>
-            </div>
-          )}
-
-          {/* Score */}
-          {gameState === 'playing' && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-5xl font-bold text-white"
-                 style={{ textShadow: '3px 3px 6px rgba(0,0,0,0.5)' }}>
-              {score}
-            </div>
-          )}
-
-          {/* Menu */}
-          {gameState === 'menu' && (
-            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-              <div className="bg-white rounded-lg p-8 text-center max-w-sm">
-                <h2 className="text-3xl font-bold mb-4">Ready to Fly?</h2>
-                <input
-                  type="text"
-                  placeholder="Enter your name"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded mb-4 text-lg"
-                  maxLength={20}
-                />
-                <div className="mb-4">
-                  <label className="block text-sm font-semibold mb-2">
-                    AI Opponents: {aiCount}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="5"
-                    value={aiCount}
-                    onChange={(e) => setAiCount(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-                <button
-                  onClick={startGame}
-                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg text-xl mb-2">
-                  Start Game
-                </button>
-                <p className="text-sm text-gray-600">Press SPACE or Click to flap</p>
-              </div>
-            </div>
-          )}
-
-          {/* Game Over */}
-          {gameState === 'gameOver' && (
-            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-              <div className="bg-white rounded-lg p-8 text-center">
-                <h2 className="text-4xl font-bold mb-4 text-red-600">Game Over!</h2>
-                <p className="text-2xl mb-6">Score: {score}</p>
-                <button
-                  onClick={resetGame}
-                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg text-xl">
-                  Play Again
-                </button>
-                <p className="text-sm text-gray-600 mt-4">Press SPACE to restart</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Leaderboard */}
-        <div className="bg-white rounded-lg shadow-lg p-6 w-64">
-          <div className="flex items-center gap-2 mb-4">
-            <Trophy className="text-yellow-500" />
-            <h3 className="text-xl font-bold">Leaderboard</h3>
-          </div>
-          <div className="space-y-2">
-            {leaderboard.length === 0 ? (
-              <p className="text-gray-500 text-sm">No scores yet!</p>
-            ) : (
-              leaderboard.map((entry, i) => (
-                <div key={i} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="font-semibold">
-                    {i + 1}. {entry.name}
-                  </span>
-                  <span className="font-bold text-blue-600">{entry.score}</span>
-                </div>
-              ))
-            )}
-          </div>
-          
-          <div className="mt-6 pt-4 border-t">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="text-green-500" size={18} />
-              <h4 className="font-bold text-sm">Live Players</h4>
-            </div>
-            <p className="text-xs text-gray-600">
-              {ghostPlayers.length} ghost{ghostPlayers.length !== 1 ? 's' : ''} online
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 text-center text-white text-sm">
-        <p>🎮 Click or press SPACE to flap | 👻 See other players in real-time | 🤖 AI opponents</p>
-      </div>
-    </div>
-  );
-}
+        // Initialize
+        loadGameData();
+        setInterval(loadGameData, 2000);
+        showMenu();
+        gameLoop();
+    </script>
+</body>
+</html>
