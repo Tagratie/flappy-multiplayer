@@ -1,0 +1,478 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Trophy, Users, Cpu } from 'lucide-react';
+
+const GRAVITY = 0.6;
+const JUMP_STRENGTH = -10;
+const PIPE_WIDTH = 60;
+const PIPE_GAP = 180;
+const PIPE_SPEED = 3;
+const BIRD_SIZE = 30;
+const GAME_WIDTH = 800;
+const GAME_HEIGHT = 600;
+
+export default function FlappyBirdMultiplayer() {
+  const [gameState, setGameState] = useState('menu'); // menu, playing, gameOver
+  const [bird, setBird] = useState({ y: 300, velocity: 0 });
+  const [pipes, setPipes] = useState([]);
+  const [score, setScore] = useState(0);
+  const [playerName, setPlayerName] = useState('');
+  const [sessionId] = useState(() => `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  const [ghostPlayers, setGhostPlayers] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [aiOpponents, setAiOpponents] = useState([]);
+  const [aiCount, setAiCount] = useState(2);
+  
+  const gameLoopRef = useRef(null);
+  const frameCountRef = useRef(0);
+
+  // Load data from storage
+  useEffect(() => {
+    loadGameData();
+    const interval = setInterval(loadGameData, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadGameData = async () => {
+    try {
+      const [ghostsData, leaderboardData] = await Promise.all([
+        window.storage.list('ghost:', true).catch(() => ({ keys: [] })),
+        window.storage.get('leaderboard', true).catch(() => null)
+      ]);
+
+      if (ghostsData?.keys) {
+        const ghosts = await Promise.all(
+          ghostsData.keys.slice(0, 10).map(async (key) => {
+            try {
+              const data = await window.storage.get(key, true);
+              return data ? JSON.parse(data.value) : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        setGhostPlayers(ghosts.filter(g => g && g.sessionId !== sessionId));
+      }
+
+      if (leaderboardData) {
+        const lb = JSON.parse(leaderboardData.value);
+        setLeaderboard(lb.sort((a, b) => b.score - a.score).slice(0, 10));
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+    }
+  };
+
+  const updateGhostPosition = async () => {
+    if (gameState !== 'playing') return;
+    
+    try {
+      await window.storage.set(
+        `ghost:${sessionId}`,
+        JSON.stringify({
+          sessionId,
+          name: playerName || 'Anonymous',
+          y: bird.y,
+          score,
+          timestamp: Date.now(),
+          alive: true
+        }),
+        true
+      );
+    } catch (err) {
+      console.error('Error updating ghost:', err);
+    }
+  };
+
+  const saveScore = async (finalScore) => {
+    try {
+      const entry = {
+        name: playerName || 'Anonymous',
+        score: finalScore,
+        timestamp: Date.now()
+      };
+
+      const current = await window.storage.get('leaderboard', true).catch(() => null);
+      const lb = current ? JSON.parse(current.value) : [];
+      lb.push(entry);
+      lb.sort((a, b) => b.score - a.score);
+      const top10 = lb.slice(0, 10);
+      
+      await window.storage.set('leaderboard', JSON.stringify(top10), true);
+      setLeaderboard(top10);
+
+      await window.storage.delete(`ghost:${sessionId}`, true).catch(() => {});
+    } catch (err) {
+      console.error('Error saving score:', err);
+    }
+  };
+
+  const jump = useCallback(() => {
+    if (gameState === 'playing') {
+      setBird(prev => ({ ...prev, velocity: JUMP_STRENGTH }));
+    }
+  }, [gameState]);
+
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (gameState === 'menu') {
+          startGame();
+        } else if (gameState === 'playing') {
+          jump();
+        } else if (gameState === 'gameOver') {
+          resetGame();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [gameState, jump]);
+
+  const initializeAI = () => {
+    const ais = [];
+    for (let i = 0; i < aiCount; i++) {
+      ais.push({
+        id: `ai_${i}`,
+        name: `Bot ${i + 1}`,
+        y: 300,
+        velocity: 0,
+        score: 0,
+        alive: true,
+        difficulty: 0.7 + Math.random() * 0.3 // 0.7-1.0 reaction skill
+      });
+    }
+    setAiOpponents(ais);
+  };
+
+  const updateAI = (currentPipes) => {
+    setAiOpponents(prev => prev.map(ai => {
+      if (!ai.alive) return ai;
+
+      let newVelocity = ai.velocity + GRAVITY;
+      let newY = ai.y + newVelocity;
+
+      // AI decision making
+      const nextPipe = currentPipes.find(p => p.x + PIPE_WIDTH > 150);
+      if (nextPipe) {
+        const pipeCenter = nextPipe.y + PIPE_GAP / 2;
+        const shouldJump = ai.y > pipeCenter - 20 && Math.random() < ai.difficulty;
+        
+        if (shouldJump) {
+          newVelocity = JUMP_STRENGTH;
+          newY = ai.y + newVelocity;
+        }
+      }
+
+      // Check collisions
+      const hitGround = newY > GAME_HEIGHT - BIRD_SIZE || newY < 0;
+      const hitPipe = currentPipes.some(pipe => {
+        const aiX = 100;
+        return aiX + BIRD_SIZE > pipe.x && 
+               aiX < pipe.x + PIPE_WIDTH &&
+               (newY < pipe.y || newY + BIRD_SIZE > pipe.y + PIPE_GAP);
+      });
+
+      if (hitGround || hitPipe) {
+        return { ...ai, alive: false };
+      }
+
+      // Update score
+      let newScore = ai.score;
+      currentPipes.forEach(pipe => {
+        if (!pipe.scored && pipe.x + PIPE_WIDTH < 100) {
+          newScore++;
+          pipe.scored = true;
+        }
+      });
+
+      return { ...ai, y: newY, velocity: newVelocity, score: newScore };
+    }));
+  };
+
+  const startGame = () => {
+    if (!playerName.trim()) {
+      alert('Please enter your name!');
+      return;
+    }
+    
+    setBird({ y: 300, velocity: 0 });
+    setPipes([{ x: GAME_WIDTH, y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100, scored: false }]);
+    setScore(0);
+    setGameState('playing');
+    initializeAI();
+  };
+
+  const resetGame = () => {
+    setGameState('menu');
+    setGhostPlayers([]);
+    setAiOpponents([]);
+  };
+
+  useEffect(() => {
+    if (gameState !== 'playing') {
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+      return;
+    }
+
+    const gameLoop = () => {
+      frameCountRef.current++;
+
+      // Update bird
+      setBird(prev => {
+        const newVelocity = prev.velocity + GRAVITY;
+        const newY = prev.y + newVelocity;
+
+        // Check collisions
+        if (newY > GAME_HEIGHT - BIRD_SIZE || newY < 0) {
+          setGameState('gameOver');
+          saveScore(score);
+          return prev;
+        }
+
+        return { y: newY, velocity: newVelocity };
+      });
+
+      // Update pipes
+      setPipes(prev => {
+        let newPipes = prev.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+        
+        // Remove off-screen pipes
+        newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
+        
+        // Add new pipes
+        if (newPipes.length === 0 || newPipes[newPipes.length - 1].x < GAME_WIDTH - 300) {
+          newPipes.push({
+            x: GAME_WIDTH,
+            y: Math.random() * (GAME_HEIGHT - PIPE_GAP - 200) + 100,
+            scored: false
+          });
+        }
+
+        // Check pipe collision
+        const birdX = 100;
+        newPipes.forEach(pipe => {
+          if (birdX + BIRD_SIZE > pipe.x && 
+              birdX < pipe.x + PIPE_WIDTH &&
+              (bird.y < pipe.y || bird.y + BIRD_SIZE > pipe.y + PIPE_GAP)) {
+            setGameState('gameOver');
+            saveScore(score);
+          }
+
+          // Update score
+          if (!pipe.scored && pipe.x + PIPE_WIDTH < birdX) {
+            pipe.scored = true;
+            setScore(s => s + 1);
+          }
+        });
+
+        updateAI(newPipes);
+        
+        return newPipes;
+      });
+
+      // Update ghost position every 10 frames
+      if (frameCountRef.current % 10 === 0) {
+        updateGhostPosition();
+      }
+
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+    };
+
+    gameLoopRef.current = requestAnimationFrame(gameLoop);
+
+    return () => {
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+    };
+  }, [gameState, bird.y, score, playerName, sessionId]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-sky-400 to-sky-300 p-4">
+      <div className="mb-4 text-center">
+        <h1 className="text-4xl font-bold text-white mb-2" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
+          Multiplayer Flappy Bird
+        </h1>
+      </div>
+
+      <div className="flex gap-4 w-full max-w-6xl">
+        {/* Game Canvas */}
+        <div className="relative bg-sky-200 rounded-lg shadow-2xl overflow-hidden" 
+             style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}
+             onClick={jump}>
+          
+          {/* Pipes */}
+          {pipes.map((pipe, i) => (
+            <React.Fragment key={i}>
+              <div className="absolute bg-green-600 border-4 border-green-700 rounded"
+                   style={{ 
+                     left: pipe.x, 
+                     top: 0, 
+                     width: PIPE_WIDTH, 
+                     height: pipe.y 
+                   }} />
+              <div className="absolute bg-green-600 border-4 border-green-700 rounded"
+                   style={{ 
+                     left: pipe.x, 
+                     top: pipe.y + PIPE_GAP, 
+                     width: PIPE_WIDTH, 
+                     height: GAME_HEIGHT - pipe.y - PIPE_GAP 
+                   }} />
+            </React.Fragment>
+          ))}
+
+          {/* Ghost Players */}
+          {ghostPlayers.map(ghost => (
+            <div key={ghost.sessionId} className="absolute transition-all duration-100"
+                 style={{ 
+                   left: 100, 
+                   top: ghost.y, 
+                   width: BIRD_SIZE, 
+                   height: BIRD_SIZE 
+                 }}>
+              <div className="w-full h-full rounded-full bg-gray-400 opacity-50 flex items-center justify-center text-xs">
+                👻
+              </div>
+              <div className="absolute -top-6 left-0 text-xs text-gray-600 whitespace-nowrap">
+                {ghost.name}: {ghost.score}
+              </div>
+            </div>
+          ))}
+
+          {/* AI Opponents */}
+          {aiOpponents.filter(ai => ai.alive).map(ai => (
+            <div key={ai.id} className="absolute transition-all duration-100"
+                 style={{ 
+                   left: 100, 
+                   top: ai.y, 
+                   width: BIRD_SIZE, 
+                   height: BIRD_SIZE 
+                 }}>
+              <div className="w-full h-full rounded-full bg-purple-500 flex items-center justify-center">
+                <Cpu size={16} className="text-white" />
+              </div>
+              <div className="absolute -top-6 left-0 text-xs text-purple-700 whitespace-nowrap font-bold">
+                {ai.name}: {ai.score}
+              </div>
+            </div>
+          ))}
+
+          {/* Player Bird */}
+          {gameState !== 'menu' && (
+            <div className="absolute transition-all duration-100"
+                 style={{ 
+                   left: 100, 
+                   top: bird.y, 
+                   width: BIRD_SIZE, 
+                   height: BIRD_SIZE 
+                 }}>
+              <div className="w-full h-full rounded-full bg-yellow-400 border-2 border-yellow-600 flex items-center justify-center text-lg">
+                🐦
+              </div>
+            </div>
+          )}
+
+          {/* Score */}
+          {gameState === 'playing' && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-5xl font-bold text-white"
+                 style={{ textShadow: '3px 3px 6px rgba(0,0,0,0.5)' }}>
+              {score}
+            </div>
+          )}
+
+          {/* Menu */}
+          {gameState === 'menu' && (
+            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="bg-white rounded-lg p-8 text-center max-w-sm">
+                <h2 className="text-3xl font-bold mb-4">Ready to Fly?</h2>
+                <input
+                  type="text"
+                  placeholder="Enter your name"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded mb-4 text-lg"
+                  maxLength={20}
+                />
+                <div className="mb-4">
+                  <label className="block text-sm font-semibold mb-2">
+                    AI Opponents: {aiCount}
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    value={aiCount}
+                    onChange={(e) => setAiCount(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <button
+                  onClick={startGame}
+                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg text-xl mb-2">
+                  Start Game
+                </button>
+                <p className="text-sm text-gray-600">Press SPACE or Click to flap</p>
+              </div>
+            </div>
+          )}
+
+          {/* Game Over */}
+          {gameState === 'gameOver' && (
+            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="bg-white rounded-lg p-8 text-center">
+                <h2 className="text-4xl font-bold mb-4 text-red-600">Game Over!</h2>
+                <p className="text-2xl mb-6">Score: {score}</p>
+                <button
+                  onClick={resetGame}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg text-xl">
+                  Play Again
+                </button>
+                <p className="text-sm text-gray-600 mt-4">Press SPACE to restart</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Leaderboard */}
+        <div className="bg-white rounded-lg shadow-lg p-6 w-64">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="text-yellow-500" />
+            <h3 className="text-xl font-bold">Leaderboard</h3>
+          </div>
+          <div className="space-y-2">
+            {leaderboard.length === 0 ? (
+              <p className="text-gray-500 text-sm">No scores yet!</p>
+            ) : (
+              leaderboard.map((entry, i) => (
+                <div key={i} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="font-semibold">
+                    {i + 1}. {entry.name}
+                  </span>
+                  <span className="font-bold text-blue-600">{entry.score}</span>
+                </div>
+              ))
+            )}
+          </div>
+          
+          <div className="mt-6 pt-4 border-t">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="text-green-500" size={18} />
+              <h4 className="font-bold text-sm">Live Players</h4>
+            </div>
+            <p className="text-xs text-gray-600">
+              {ghostPlayers.length} ghost{ghostPlayers.length !== 1 ? 's' : ''} online
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 text-center text-white text-sm">
+        <p>🎮 Click or press SPACE to flap | 👻 See other players in real-time | 🤖 AI opponents</p>
+      </div>
+    </div>
+  );
+}
