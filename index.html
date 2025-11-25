@@ -205,7 +205,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🐦 Multiplayer Flappy Bird 🐦</h1>
+        <h1>Multiplayer Flappy Bird</h1>
     </div>
 
     <div class="game-container">
@@ -215,7 +215,7 @@
 
         <div class="sidebar">
             <div class="section-title">
-                🏆 Leaderboard
+                Leaderboard
             </div>
             <div id="leaderboard">
                 <div class="empty-state">No scores yet!</div>
@@ -223,7 +223,7 @@
 
             <div class="live-players">
                 <div class="section-title">
-                    👥 Live Players
+                    Live Players
                 </div>
                 <div id="liveCount" style="font-size: 0.9em; color: #666;">
                     0 players online
@@ -233,18 +233,18 @@
     </div>
 
     <div class="instructions">
-        🎮 Press SPACE or Click to flap | 👻 See other players in real-time | 🤖 AI opponents
+        Press SPACE or Click to flap | See other players in real-time | AI opponents
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        const GRAVITY = 0.5;
-        const JUMP_STRENGTH = -9;
+        const GRAVITY = 0.25;
+        const JUMP_STRENGTH = -5.5;
         const PIPE_WIDTH = 60;
-        const PIPE_GAP = 180;
-        const PIPE_SPEED = 2;
+        const PIPE_GAP = 200;
+        const PIPE_SPEED = 1.5;
         const BIRD_SIZE = 30;
         const GAME_WIDTH = 800;
         const GAME_HEIGHT = 600;
@@ -256,6 +256,7 @@
         let score = 0;
         let highScore = 0;
         let playerName = '';
+        let playerCode = '';
         let playerId = localStorage.getItem('playerId') || `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         localStorage.setItem('playerId', playerId);
         
@@ -268,9 +269,38 @@
         let countdown = 0;
         let gameStarted = false;
 
-        // Storage simulation for local testing
-        const storage = {
-            data: {},
+        // Use window.storage if available (Claude.ai), otherwise localStorage
+        const storage = window.storage ? {
+            async get(key, shared = true) {
+                try {
+                    return await window.storage.get(key, shared);
+                } catch (err) {
+                    return null;
+                }
+            },
+            async set(key, value, shared = true) {
+                try {
+                    return await window.storage.set(key, value, shared);
+                } catch (err) {
+                    return null;
+                }
+            },
+            async delete(key, shared = true) {
+                try {
+                    return await window.storage.delete(key, shared);
+                } catch (err) {
+                    return null;
+                }
+            },
+            async list(prefix, shared = true) {
+                try {
+                    return await window.storage.list(prefix, shared);
+                } catch (err) {
+                    return { keys: [] };
+                }
+            }
+        } : {
+            data: JSON.parse(localStorage.getItem('flappyStorage') || '{}'),
             async get(key) {
                 await new Promise(r => setTimeout(r, 10));
                 return this.data[key] ? { value: this.data[key] } : null;
@@ -278,11 +308,13 @@
             async set(key, value) {
                 await new Promise(r => setTimeout(r, 10));
                 this.data[key] = value;
+                localStorage.setItem('flappyStorage', JSON.stringify(this.data));
                 return { value };
             },
             async delete(key) {
                 await new Promise(r => setTimeout(r, 10));
                 delete this.data[key];
+                localStorage.setItem('flappyStorage', JSON.stringify(this.data));
                 return { deleted: true };
             },
             async list(prefix) {
@@ -294,27 +326,43 @@
 
         async function loadGameData() {
             try {
-                const ghostsData = await storage.list('ghost:');
-                const leaderboardData = await storage.get('leaderboard');
+                const [ghostsData, leaderboardData] = await Promise.all([
+                    storage.list('ghost:', true),
+                    storage.get('leaderboard', true)
+                ]);
 
                 if (ghostsData?.keys) {
                     const ghosts = await Promise.all(
                         ghostsData.keys.slice(0, 10).map(async (key) => {
                             try {
-                                const data = await storage.get(key);
-                                return data ? JSON.parse(data.value) : null;
+                                const data = await storage.get(key, true);
+                                if (!data || !data.value) return null;
+                                const parsed = JSON.parse(data.value);
+                                // Filter out old ghosts (older than 10 seconds)
+                                if (Date.now() - parsed.timestamp > 10000) return null;
+                                return parsed;
                             } catch {
                                 return null;
                             }
                         })
                     );
-                    ghostPlayers = ghosts.filter(g => g && g.sessionId !== sessionId);
+                    // Filter out current player's ghosts by playerId
+                    ghostPlayers = ghosts.filter(g => g && g.playerId !== playerId);
                 }
 
-                if (leaderboardData) {
+                if (leaderboardData && leaderboardData.value) {
                     leaderboard = JSON.parse(leaderboardData.value);
                     leaderboard.sort((a, b) => b.score - a.score);
                     leaderboard = leaderboard.slice(0, 10);
+                    
+                    // Update local high score if player exists in leaderboard
+                    const myEntry = leaderboard.find(entry => 
+                        entry.playerId === playerId || 
+                        (entry.name === playerName && entry.code === playerCode)
+                    );
+                    if (myEntry) {
+                        highScore = myEntry.score;
+                    }
                 }
 
                 updateLeaderboardDisplay();
@@ -337,7 +385,8 @@
                         score,
                         timestamp: Date.now(),
                         alive: true
-                    })
+                    }),
+                    true
                 );
             } catch (err) {
                 console.error('Error updating ghost:', err);
@@ -348,32 +397,44 @@
             if (finalScore === 0) return;
 
             try {
-                const current = await storage.get('leaderboard');
-                let lb = current ? JSON.parse(current.value) : [];
+                const current = await storage.get('leaderboard', true);
+                let lb = current && current.value ? JSON.parse(current.value) : [];
                 
-                // Remove old entries from this player (by playerId, not name)
-                lb = lb.filter(entry => entry.playerId !== playerId);
+                // Find existing entry by playerId AND verification code
+                const existingIndex = lb.findIndex(entry => 
+                    entry.playerId === playerId && entry.code === playerCode
+                );
                 
-                // Add new score only if it's better than previous high score
+                // Only update if new score is better
                 if (finalScore > highScore) {
                     highScore = finalScore;
+                    
                     const entry = {
                         playerId,
                         name: playerName || 'Anonymous',
+                        code: playerCode,
                         score: finalScore,
                         timestamp: Date.now()
                     };
-                    lb.push(entry);
+                    
+                    if (existingIndex >= 0) {
+                        // Update existing entry
+                        lb[existingIndex] = entry;
+                    } else {
+                        // Add new entry
+                        lb.push(entry);
+                    }
+                    
+                    lb.sort((a, b) => b.score - a.score);
+                    const top10 = lb.slice(0, 10);
+
+                    const result = await storage.set('leaderboard', JSON.stringify(top10), true);
+                    console.log('Leaderboard saved:', result);
+                    leaderboard = top10;
+                    updateLeaderboardDisplay();
                 }
-                
-                lb.sort((a, b) => b.score - a.score);
-                const top10 = lb.slice(0, 10);
 
-                await storage.set('leaderboard', JSON.stringify(top10));
-                leaderboard = top10;
-                updateLeaderboardDisplay();
-
-                await storage.delete(`ghost:${sessionId}`);
+                await storage.delete(`ghost:${sessionId}`, true);
             } catch (err) {
                 console.error('Error saving score:', err);
             }
@@ -457,8 +518,11 @@
 
         function showMenu() {
             const savedName = localStorage.getItem('playerName');
-            if (savedName) {
+            const savedCode = localStorage.getItem('playerCode');
+            
+            if (savedName && savedCode) {
                 playerName = savedName;
+                playerCode = savedCode;
                 startCountdown();
                 return;
             }
@@ -469,7 +533,11 @@
             modal.innerHTML = `
                 <div class="modal-content">
                     <h2>Ready to Fly?</h2>
-                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" value="${playerName}" />
+                    <input type="text" id="playerNameInput" placeholder="Enter your name" maxlength="20" value="${savedName || ''}" />
+                    <input type="text" id="playerCodeInput" placeholder="Verification code (4-8 chars)" maxlength="8" value="${savedCode || ''}" />
+                    <div style="font-size: 0.85em; color: #666; margin: -10px 0 10px 0; text-align: left;">
+                        Save your code to keep your high score across devices!
+                    </div>
                     <div class="slider-container">
                         <label>AI Opponents: <span id="aiCountDisplay">${aiCount}</span></label>
                         <input type="range" id="aiCountSlider" min="0" max="5" value="${aiCount}" />
@@ -486,20 +554,36 @@
             });
 
             document.getElementById('playerNameInput').focus();
-            document.getElementById('playerNameInput').addEventListener('keypress', (e) => {
+            document.getElementById('playerCodeInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') startGame();
+            });
+            document.getElementById('playerNameInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('playerCodeInput').focus();
+                }
             });
         }
 
         function startGame() {
-            const input = document.getElementById('playerNameInput');
-            if (input) {
-                playerName = input.value.trim();
+            const nameInput = document.getElementById('playerNameInput');
+            const codeInput = document.getElementById('playerCodeInput');
+            
+            if (nameInput) {
+                playerName = nameInput.value.trim();
                 if (!playerName) {
                     alert('Please enter your name!');
                     return;
                 }
+            }
+            
+            if (codeInput) {
+                playerCode = codeInput.value.trim();
+                if (!playerCode || playerCode.length < 4) {
+                    alert('Please enter a verification code (at least 4 characters)!');
+                    return;
+                }
                 localStorage.setItem('playerName', playerName);
+                localStorage.setItem('playerCode', playerCode);
             }
 
             const modal = document.getElementById('menuModal');
@@ -581,9 +665,9 @@
                 if (gameStarted) {
                     frameCount++;
 
-                    // Update bird physics
+                    // Update bird physics - super floaty!
                     bird.velocity += GRAVITY;
-                    bird.velocity = Math.min(bird.velocity, 10); // Terminal velocity
+                    bird.velocity = Math.min(bird.velocity, 6); // Very low terminal velocity
                     bird.y += bird.velocity;
 
                     // Check collision with ground/ceiling
@@ -597,7 +681,7 @@
                     pipes = pipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
                     pipes = pipes.filter(pipe => pipe.x > -PIPE_WIDTH);
 
-                    if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 250) {
+                    if (pipes.length === 0 || pipes[pipes.length - 1].x < GAME_WIDTH - 350) {
                         pipes.push({
                             x: GAME_WIDTH,
                             y: Math.random() * (GAME_HEIGHT - GROUND_HEIGHT - PIPE_GAP - 100) + 50,
@@ -754,18 +838,39 @@
         }
 
         // Event listeners
-        canvas.addEventListener('click', jump);
+        let canJump = true;
+        let jumpCooldown = 200; // Increased to 200ms for slower, more deliberate jumps
+
+        canvas.addEventListener('click', () => {
+            if (canJump) {
+                jump();
+                canJump = false;
+                setTimeout(() => canJump = true, jumpCooldown);
+            }
+        });
+
+        let spacePressed = false;
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
                 if (gameState === 'menu') {
                     const input = document.getElementById('playerNameInput');
                     if (input) startGame();
-                } else if (gameState === 'playing') {
+                } else if (gameState === 'playing' && !spacePressed && canJump) {
                     jump();
-                } else if (gameState === 'gameOver') {
+                    spacePressed = true;
+                    canJump = false;
+                    setTimeout(() => canJump = true, jumpCooldown);
+                } else if (gameState === 'gameOver' && !spacePressed) {
                     respawn();
+                    spacePressed = true;
                 }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                spacePressed = false;
             }
         });
 
@@ -773,10 +878,12 @@
         loadGameData();
         setInterval(loadGameData, 2000);
         
-        // Check if player has a saved name
+        // Check if player has saved credentials
         const savedName = localStorage.getItem('playerName');
-        if (savedName) {
+        const savedCode = localStorage.getItem('playerCode');
+        if (savedName && savedCode) {
             playerName = savedName;
+            playerCode = savedCode;
         }
         
         showMenu();
